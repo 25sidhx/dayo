@@ -44,6 +44,7 @@ export default function OnboardingWizard() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [usedFallback, setUsedFallback] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
 
   const [name, setName] = useState("");
   const [batch, setBatch] = useState("");
@@ -59,6 +60,7 @@ export default function OnboardingWizard() {
   const [activeDay, setActiveDay] = useState('MONDAY');
   const [correctionText, setCorrectionText] = useState("");
   const [isCorrecting, setIsCorrecting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [manualForm, setManualForm] = useState({ subject: '', type: 'Theory', startTime: '09:00', endTime: '10:00', days: ['MONDAY'] as string[], room: '', faculty: '' });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -611,10 +613,24 @@ export default function OnboardingWizard() {
 
           {step === 'verify' && (
             <div className="w-full max-w-4xl flex flex-col items-center animate-in fade-in duration-700 relative">
-              {classes.length === 0 ? (
+              {classes.length === 0 && !showManualForm ? (
+                <>
+                  <h2 className="font-heading text-[32px] text-[#1A1A2E] leading-tight mb-2 text-center">Extraction Failed</h2>
+                  <p className="text-[14px] text-[#9CA3AF] mb-8 text-center">Our AI couldn&apos;t read any classes from your timetable.</p>
+                  
+                  <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm mb-12">
+                    <button onClick={() => { setStep('upload'); setUploadState('idle'); setSelectedFile(null); }} className="flex-1 bg-white border-2 border-[#E5E7EB] hover:border-[#6366F1] text-[#1A1A2E] py-3 rounded-xl font-bold transition-all">
+                      Try Again
+                    </button>
+                    <button onClick={() => setShowManualForm(true)} className="flex-1 bg-[#6366F1] hover:bg-[#4F46E5] text-white py-3 rounded-xl font-bold transition-all shadow-md">
+                      Add Manually
+                    </button>
+                  </div>
+                </>
+              ) : classes.length === 0 && showManualForm ? (
                 <>
                   <h2 className="font-heading text-[32px] text-[#1A1A2E] leading-tight mb-2 text-center">Let&apos;s add your classes manually</h2>
-                  <p className="text-[14px] text-[#9CA3AF] mb-8 text-center">Our AI couldn&apos;t read your timetable. Add your classes one by one.</p>
+                  <p className="text-[14px] text-[#9CA3AF] mb-8 text-center">Add your classes one by one below.</p>
                 </>
               ) : (
                 <>
@@ -637,8 +653,10 @@ export default function OnboardingWizard() {
                  </div>
                )}
 
-              {/* ── FORM SECTION ── */}
-              <div className="w-full max-w-2xl bg-white p-6 rounded-[20px] shadow-sm border border-[#E5E7EB] mb-6">
+              {(classes.length > 0 || showManualForm) && (
+                <>
+                  {/* ── FORM SECTION ── */}
+                  <div className="w-full max-w-2xl bg-white p-6 rounded-[20px] shadow-sm border border-[#E5E7EB] mb-6">
                 <h3 className="font-bold text-[#1A1A2E] mb-4">Add Class</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="col-span-1 md:col-span-2">
@@ -728,42 +746,49 @@ export default function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Natural Language AI Corrector */}
-              <div className="w-full max-w-2xl bg-white p-2 pl-4 rounded-[16px] flex flex-col md:flex-row gap-2 items-center mb-12 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border-[1.5px] border-[#6366F1]/30">
-                <Wand2 className="w-5 h-5 text-[#6366F1] shrink-0 hidden md:block" />
-                <input 
-                  type="text" 
-                  value={correctionText}
-                  onChange={(e) => setCorrectionText(e.target.value)}
-                  placeholder="Something wrong? Describe it in plain English"
-                  className="w-full text-[14px] bg-transparent outline-none placeholder:text-[#9CA3AF] text-[#1A1A2E] py-2 md:py-0"
-                  disabled={isCorrecting}
-                />
-                <button 
-                  onClick={applyCorrection} 
-                  disabled={!correctionText.trim() || isCorrecting}
-                  className="w-full md:w-auto px-6 py-2.5 bg-[#6366F1] hover:bg-[#4F46E5] text-white font-bold text-[13px] rounded-[12px] shadow-sm transition-all disabled:opacity-50"
-                >
-                  {isCorrecting ? 'Fixing...' : 'Fix'}
-                </button>
-              </div>
+              {/* Removed AI Corrector in Phase B per instructions */}
+              <div className="h-4" />
 
               {/* Empty bottom padding so content doesn't hide behind fixed Done button */}
               <div className="h-24" />
 
-              {/* ── DONE BUTTON — FIXED TO BOTTOM, only when classes exist ── */}
+               {/* ── DONE BUTTON — FIXED TO BOTTOM, only when classes exist ── */}
               {classes.length > 0 && (
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-sm border-t border-gray-100 z-50">
                   <div className="max-w-md mx-auto">
-                    <button disabled={classes.length === 0} onClick={() => advanceStep('commute')} className="w-full bg-[#6366F1] hover:bg-[#4F46E5] text-white py-4 rounded-[14px] font-semibold text-[14px] shadow-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
-                      <span>Done — Build My Schedule ({classes.length} classes)</span>
+                    <button 
+                      disabled={classes.length === 0 || isSaving} 
+                      onClick={async () => {
+                        setIsSaving(true);
+                        const saveToastId = toast.loading("Saving your schedule...");
+                        try {
+                          const idToken = await user?.getIdToken();
+                          const res = await fetch('/api/save-classes', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+                            body: JSON.stringify({ classes })
+                          });
+                          if (!res.ok) throw new Error("Failed to save classes");
+                          toast.success("Schedule saved!", { id: saveToastId });
+                          advanceStep('commute');
+                        } catch (e) {
+                          toast.error("Error saving classes. Please try again.", { id: saveToastId });
+                        } finally {
+                          setIsSaving(false);
+                        }
+                      }} 
+                      className="w-full bg-[#6366F1] hover:bg-[#4F46E5] text-white py-4 rounded-[14px] font-semibold text-[14px] shadow-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      <span>{isSaving ? "Saving..." : `Done — Build My Schedule (${classes.length} classes)`}</span>
                       <ChevronRight className="w-5 h-5" />
                     </button>
                   </div>
                 </div>
               )}
-            </div>
+            </>
           )}
+        </div>
+      )}
 
           {step === 'commute' && (
             <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-500">

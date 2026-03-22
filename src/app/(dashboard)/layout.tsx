@@ -209,7 +209,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <ErrorBoundary>{children}</ErrorBoundary>
         </main>
 
-        <MobileNav />
+
 
         {/* ── RIGHT PANEL (hidden on mobile + tablet) ── */}
         <aside className="hidden lg:flex flex-col gap-[16px] p-[20px_16px] border-l-[0.5px] border-[#F3F4F6] overflow-y-auto bg-[#FAFAF8] custom-scrollbar">

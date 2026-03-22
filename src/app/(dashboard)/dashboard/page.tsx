@@ -151,12 +151,34 @@ export default function DashboardPage() {
 
         const classNames = [...new Set(classBlocks.map(c => c.subject_name))].filter(Boolean);
         let riskCount = 0;
+        
+        const userDocData = userDoc.exists() ? userDoc.data() : {};
+        const semesterStart = userDocData.semester_start_date 
+          ? new Date(userDocData.semester_start_date)
+          : new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000);
+        const weeksElapsed = Math.max(1, Math.round((Date.now() - semesterStart.getTime()) / (7 * 24 * 60 * 60 * 1000)));
+
         for (const subject of classNames) {
           try {
+            const classesSnap = await getDocs(query(collection(db, 'classes'), where('user_id', '==', user.uid), where('subject', '==', subject)));
+            const allDays = new Set<string>();
+            classesSnap.docs.forEach(d => (d.data().days || []).forEach((day: string) => allDays.add(day)));
+            const weeklyCount = Math.max(allDays.size, 1);
+            const classesSoFar = weeksElapsed * weeklyCount;
+
             const attSnap = await getDocs(query(collection(db, 'attendance'), where('user_id', '==', user.uid), where('subject_name', '==', subject)));
-            if (attSnap.size > 0) {
-              const attended = attSnap.docs.filter(d => d.data().status === 'attended').length;
-              if (Math.round((attended / attSnap.size) * 100) < 75) riskCount++;
+            let bunked = 0, cancelled = 0;
+            attSnap.docs.forEach(doc => {
+              const s = doc.data().status;
+              if (s === 'bunked') bunked++;
+              if (s === 'cancelled') cancelled++;
+            });
+
+            const effectiveTotal = Math.max(1, classesSoFar - cancelled);
+            const effectiveAttended = Math.max(0, effectiveTotal - bunked);
+            
+            if (Math.round((effectiveAttended / effectiveTotal) * 100) < 75) {
+              riskCount++;
             }
           } catch {}
         }
@@ -199,9 +221,7 @@ export default function DashboardPage() {
     }
   }
 
-  const subtitle = !loaded ? '...' : classCount === 0
-    ? "No classes today — enjoy your day off!"
-    : `You have ${classCount} class${classCount > 1 ? 'es' : ''} today.`;
+  const subtitle = briefingText;
 
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-[900px] w-full mx-auto flex-1">

@@ -207,12 +207,22 @@ export default function AttendancePage() {
       // Build subject data
       const subjectData: SubjectData[] = Object.entries(subjectMap).map(([subject, days]) => {
         const records = allRecords.filter((r: any) => r.subject_name === subject);
-        const attended = records.filter((r: any) => r.status === 'attended').length;
         const bunked = records.filter((r: any) => r.status === 'bunked').length;
-        const total = semStart ? calculateClassesSoFar(days, semStart) : (attended + bunked);
-        const pct = total > 0 ? Math.round((attended / total) * 100) : null;
-        const safeBunks = total > 0 ? getSafeBunks(attended, total) : 0;
+        const cancelled = records.filter((r: any) => r.status === 'cancelled').length;
+        
+        let total = records.length;
+        if (semStart) {
+          total = calculateClassesSoFar(days, semStart) - cancelled;
+        } else {
+          total = records.length; // fallback if no semester date
+        }
+        total = Math.max(1, total); // avoid div zero
+        
+        const attended = Math.max(0, total - bunked);
+        const pct = Math.round((attended / total) * 100);
+        const safeBunks = Math.max(0, Math.floor(attended - (total * 0.75)));
         const history = records.sort((a: any, b: any) => (b.date || '').localeCompare(a.date || '')).slice(0, 5);
+        
         return { subject, days, attended, bunked, total, pct, safeBunks, history };
       }).sort((a, b) => (a.pct ?? 100) - (b.pct ?? 100));
 
@@ -252,6 +262,36 @@ export default function AttendancePage() {
       loadData();
     } catch (e: any) { toast.error(e.message); }
     setResetting(false);
+  };
+
+  const [quickLogging, setQuickLogging] = useState<string | null>(null);
+  const quickLogAttendance = async (subject: string, status: 'attended' | 'bunked') => {
+    if (!user) return;
+    setQuickLogging(subject);
+    try {
+      const { db } = await import('@/lib/firebase/clientApp');
+      const todayDate = new Date().toISOString().split('T')[0];
+      
+      const existing = await getDocs(query(
+        collection(db, 'attendance'),
+        where('user_id', '==', user.uid),
+        where('subject_name', '==', subject),
+        where('date', '==', todayDate)
+      ));
+      if (!existing.empty) {
+        toast.error(`Already logged today.`);
+        setQuickLogging(null);
+        return;
+      }
+
+      await addDoc(collection(db, 'attendance'), {
+        user_id: user.uid, subject_name: subject, date: todayDate,
+        status, logged_at: serverTimestamp()
+      });
+      toast.success(`${subject} — ${status} today`);
+      loadData();
+    } catch (e: any) { toast.error(e.message); }
+    setQuickLogging(null);
   };
 
   // Summary stats
@@ -376,9 +416,11 @@ export default function AttendancePage() {
                   <div className="flex justify-center">
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ backgroundColor: badge.bg, color: badge.color }}>{badge.label}</span>
                   </div>
-                  <div className="flex justify-center" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setLogTarget(sub.subject)} className="flex items-center gap-1 text-[10px] font-semibold text-[#6366F1] hover:bg-[#EEF2FF] px-2 py-1 rounded-[6px] transition-colors">
-                      <PlusCircle className="w-3 h-3" /> Log
+                  <div className="flex items-center justify-center gap-1" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => quickLogAttendance(sub.subject, 'attended')} disabled={quickLogging === sub.subject} className="w-6 h-6 flex items-center justify-center rounded-[6px] bg-[#F0FFF4] text-[#059669] hover:bg-[#D1FAE5] transition-colors disabled:opacity-50 font-bold">✓</button>
+                    <button onClick={() => quickLogAttendance(sub.subject, 'bunked')} disabled={quickLogging === sub.subject} className="w-6 h-6 flex items-center justify-center rounded-[6px] bg-[#FFF0F3] text-[#E11D48] hover:bg-[#FFE4E6] transition-colors disabled:opacity-50 font-bold">✗</button>
+                    <button onClick={() => setLogTarget(sub.subject)} className="flex items-center gap-1 text-[10px] font-semibold text-[#6366F1] hover:bg-[#EEF2FF] px-1.5 py-1 h-6 rounded-[6px] transition-colors">
+                      <PlusCircle className="w-3 h-3" />
                     </button>
                   </div>
                 </div>
@@ -390,11 +432,12 @@ export default function AttendancePage() {
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0" />}
                       <span className="text-[13px] font-semibold text-[#1A1A2E] truncate">{sub.subject}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ backgroundColor: badge.bg, color: badge.color }}>{badge.label}</span>
+                    <div className="flex items-center gap-1.5 mt-2 md:mt-0">
+                      <button onClick={e => { e.stopPropagation(); quickLogAttendance(sub.subject, 'attended'); }} disabled={quickLogging === sub.subject} className="w-6 h-6 flex items-center justify-center rounded-[6px] bg-[#F0FFF4] text-[#059669] disabled:opacity-50 font-bold">✓</button>
+                      <button onClick={e => { e.stopPropagation(); quickLogAttendance(sub.subject, 'bunked'); }} disabled={quickLogging === sub.subject} className="w-6 h-6 flex items-center justify-center rounded-[6px] bg-[#FFF0F3] text-[#E11D48] disabled:opacity-50 font-bold">✗</button>
                       <button onClick={e => { e.stopPropagation(); setLogTarget(sub.subject); }}
-                        className="flex items-center gap-1 text-[10px] font-semibold text-[#6366F1] bg-[#EEF2FF] px-2.5 py-1 rounded-[6px]">
-                        <PlusCircle className="w-3 h-3" /> Log
+                        className="flex items-center gap-1 text-[10px] font-semibold text-[#6366F1] bg-[#EEF2FF] px-2.5 h-6 rounded-[6px]">
+                        <PlusCircle className="w-3 h-3" />
                       </button>
                     </div>
                   </div>

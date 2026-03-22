@@ -39,26 +39,25 @@ export async function POST(req: NextRequest) {
     ));
     const classesSoFar = weeksElapsed * weeklyCount;
 
-    // Count attended + bunked
+    // Count attended, bunked, cancelled
     const attSnap = await adminDb.collection('attendance')
       .where('user_id', '==', uid)
       .where('subject_name', '==', subjectName)
-      .where('status', '==', 'attended')
       .get();
-    const attended = attSnap.size;
+      
+    let bunked = 0;
+    let cancelled = 0;
+    
+    attSnap.docs.forEach(doc => {
+      const s = doc.data().status;
+      if (s === 'bunked') bunked++;
+      if (s === 'cancelled') cancelled++;
+    });
 
-    const bunkSnap = await adminDb.collection('attendance')
-      .where('user_id', '==', uid)
-      .where('subject_name', '==', subjectName)
-      .where('status', '==', 'bunked')
-      .get();
-    const bunked = bunkSnap.size;
+    const effectiveTotal = Math.max(1, classesSoFar - cancelled);
+    const effectiveAttended = Math.max(0, effectiveTotal - bunked);
 
-    const totalRecords = attended + bunked;
-    const effectiveAttended = totalRecords > 0 ? attended : classesSoFar;
-    const effectiveTotal = totalRecords > 0 ? totalRecords : classesSoFar;
-
-    const currentPct = effectiveTotal > 0 ? Math.round((effectiveAttended / effectiveTotal) * 100) : 100;
+    const currentPct = Math.round((effectiveAttended / effectiveTotal) * 100);
     const projectedPct = Math.round((effectiveAttended / (effectiveTotal + 1)) * 100);
     const safeBunks = Math.max(0, Math.floor(effectiveAttended - (effectiveTotal * 0.75)));
     const status = currentPct >= 80 ? 'safe' : currentPct >= 75 ? 'warning' : 'danger';
@@ -106,6 +105,38 @@ export async function POST(req: NextRequest) {
           is_cancelled: false
         });
       });
+
+      // Phase E: "delete travel block" if this was the only/last class today
+      if (isBunked) {
+        const allClassBlocksSnap = await adminDb.collection('schedule_blocks')
+          .where('user_id', '==', uid)
+          .where('date', '==', date)
+          .where('block_type', '==', 'class')
+          .get();
+          
+        const areAllClassesNowBunked = allClassBlocksSnap.docs.every(d => {
+          if (d.data().subject_name === subjectName) return true; // Just bunked
+          if (d.data().is_bunked) return true; // Already bunked
+          return false;
+        });
+
+        if (areAllClassesNowBunked) {
+           const commuteBlocksSnap = await adminDb.collection('schedule_blocks')
+             .where('user_id', '==', uid)
+             .where('date', '==', date)
+             .where('block_type', 'in', ['travel', 'prep'])
+             .get();
+             
+           commuteBlocksSnap.docs.forEach(doc => {
+             batch.update(doc.ref, { 
+               block_type: 'free', 
+               label: 'Free Time', 
+               icon: 'free', 
+               color: '#E5E7EB' 
+             });
+           });
+        }
+      }
 
       await batch.commit();
 
