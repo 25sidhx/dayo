@@ -1,18 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Initialize the Gemini API client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
 // Define the Tiers
 export const AI_TIERS = {
   TIER_1: {
-    id: 'gemini-2.5-flash-lite-preview-06-17', // Extremely fast, low latency, huge context
-    provider: 'gemini',
+    id: 'anthropic/claude-3.5-sonnet', // Highest quality, authorized by user
+    provider: 'openrouter',
     type: 'vision',
-    description: 'Ultra-fast primary engine'
+    description: 'Ultra-smart primary engine (Claude 3.5 Sonnet)'
   },
   TIER_2: {
-    id: 'gemini-1.5-flash',      // Proven stable workhorse with high quotas
+    id: 'gemini-2.5-flash',      // Proven stable workhorse
     provider: 'gemini',
     type: 'vision', 
     description: 'High free-quota stable fallback'
@@ -36,7 +33,7 @@ export const AI_TIERS = {
     description: 'OpenRouter Free Fallback (Step 3.5 Flash)'
   },
   TIER_4: {
-    id: 'gemini-1.5-pro',        // Slowest, most expensive, best reasoning
+    id: 'gemini-2.5-pro',        // Premium reasoning
     provider: 'gemini',
     type: 'vision',
     description: 'Premium intelligence fallback'
@@ -97,6 +94,7 @@ async function executeOpenRouterRequest(modelId: string, prompt: string, imageBa
  * Tries Tier 1, if it throws a 429 quota error, immediately switches to Tier 2, etc.
  */
 export async function executeVisionWithFallback(prompt: string, imageBase64: string) {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
   const tiersToTry = [AI_TIERS.TIER_1, AI_TIERS.TIER_2, AI_TIERS.TIER_3, AI_TIERS.TIER_3B, AI_TIERS.TIER_3C, AI_TIERS.TIER_4];
   
   let lastError = null;
@@ -159,6 +157,7 @@ export async function executeVisionWithFallback(prompt: string, imageBase64: str
  * Executes a text-only prompt with automatic multi-tier fallback logic.
  */
 export async function executeTextWithFallback(prompt: string) {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
   const tiersToTry = [AI_TIERS.TIER_4, AI_TIERS.TIER_1, AI_TIERS.TIER_2, AI_TIERS.TIER_3, AI_TIERS.TIER_3B, AI_TIERS.TIER_3C]; // TIER_4 (Pro) is best for logic corrections
   
   let lastError = null;
