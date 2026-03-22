@@ -4,8 +4,8 @@ import { adminDb } from '@/lib/firebase/firebaseAdmin';
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, error, status } = await validateToken(req);
-    if (error || !uid) return NextResponse.json({ error }, { status: status || 401 });
+    const { uid, error, status: authStatus } = await validateToken(req);
+    if (error || !uid) return NextResponse.json({ error }, { status: authStatus || 401 });
 
     const { subjectName, date, action } = await req.json();
     if (!subjectName || !date || !action) {
@@ -64,16 +64,54 @@ export async function POST(req: NextRequest) {
     const status = currentPct >= 80 ? 'safe' : currentPct >= 75 ? 'warning' : 'danger';
 
     if (action === 'confirm_bunk' || action === 'confirm_cancel') {
-      await adminDb.collection('attendance').add({
+      const isBunked = action === 'confirm_bunk';
+      const batch = adminDb.batch();
+
+      // 1. Add attendance record
+      const attRef = adminDb.collection('attendance').doc();
+      batch.set(attRef, {
         user_id: uid,
         subject_name: subjectName,
         date: date,
-        status: action === 'confirm_bunk' ? 'bunked' : 'cancelled',
+        status: isBunked ? 'bunked' : 'cancelled',
         logged_at: new Date()
       });
+
+      // 2. Cascade schedule
+      const blocksSnap = await adminDb.collection('schedule_blocks')
+        .where('user_id', '==', uid)
+        .where('date', '==', date)
+        .where('subject_name', '==', subjectName)
+        .where('block_type', '==', 'class')
+        .get();
+
+      blocksSnap.docs.forEach(blockDoc => {
+        batch.update(blockDoc.ref, { 
+          is_bunked: isBunked,
+          is_cancelled: !isBunked 
+        });
+
+        const data = blockDoc.data();
+        const newFreeRef = adminDb.collection('schedule_blocks').doc();
+        batch.set(newFreeRef, {
+          user_id: uid,
+          date: date,
+          block_type: 'free',
+          label: 'Free Time',
+          start_time: data.start_time,
+          end_time: data.end_time,
+          color: '#E5E7EB',
+          icon: 'free',
+          is_bunked: false,
+          is_cancelled: false
+        });
+      });
+
+      await batch.commit();
+
       return NextResponse.json({
         success: true, currentPct, projectedPct, safeBunks, status,
-        message: action === 'confirm_bunk'
+        message: isBunked
           ? `Bunked ✓ — ${subjectName} removed for today`
           : `Marked as cancelled — no attendance penalty`
       });

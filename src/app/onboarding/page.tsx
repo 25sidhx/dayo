@@ -60,6 +60,7 @@ export default function OnboardingWizard() {
   const [correctionText, setCorrectionText] = useState("");
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [manualForm, setManualForm] = useState({ subject: '', type: 'Theory', startTime: '09:00', endTime: '10:00', days: ['MONDAY'] as string[], room: '', faculty: '' });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Install Prompt State
   const [showIOSInstall, setShowIOSInstall] = useState(false);
@@ -73,18 +74,35 @@ export default function OnboardingWizard() {
       import("@/lib/firebase/clientApp").then(({ db }) => {
         getDoc(doc(db, "users", user.uid)).then(d => {
            if (!mounted) return;
-           if (d.exists() && d.data().onboarding_step) {
-             const stepNum = d.data().onboarding_step;
-             if (stepNum >= 9 || d.data().onboarding_complete) router.push('/dashboard');
-             else {
-               const mapping: WizardStep[] = ['profile', 'upload', 'batch_select', 'verify', 'commute', 'wake_sleep', 'semester', 'intensity', 'generating'];
-               let resumeStep = mapping[stepNum - 1] || 'profile';
-               // If resuming to a step that requires class data (verify, batch_select),
-               // redirect back to upload since class data is ephemeral and won't survive page reload
-               if (resumeStep === 'verify' || resumeStep === 'batch_select') {
-                 resumeStep = 'upload';
+           if (d.exists()) {
+             const data = d.data();
+             if (data.onboarding_complete) {
+               router.push('/dashboard');
+               return;
+             }
+             
+             // Restore draft data
+             if (data.name) setName(data.name);
+             if (data.batch) setBatch(data.batch);
+             if (data.wake_time) setWakeTime(data.wake_time);
+             if (data.sleep_time) setSleepTime(data.sleep_time);
+             if (data.morning_commute_mins) setMorningCommute(data.morning_commute_mins);
+             if (data.Evening_commute_mins) setEveningCommute(data.Evening_commute_mins);
+             if (data.rush_hour_buffer) setRushHourBuffer(data.rush_hour_buffer);
+             if (data.semester_weeks) setSemesterWeeks(data.semester_weeks);
+             if (data.checkin_intensity) setIntensity(data.checkin_intensity);
+
+             if (data.onboarding_step) {
+               const stepNum = data.onboarding_step;
+               if (stepNum >= 9) router.push('/dashboard');
+               else {
+                 const mapping: WizardStep[] = ['profile', 'upload', 'batch_select', 'verify', 'commute', 'wake_sleep', 'semester', 'intensity', 'generating'];
+                 let resumeStep = mapping[stepNum - 1] || 'profile';
+                 // If resuming to a step that requires class data (verify, batch_select),
+                 // stay on upload since class data isn't persisted in this draft system yet
+                 if (resumeStep === 'verify' || resumeStep === 'batch_select') resumeStep = 'upload';
+                 setStep(resumeStep);
                }
-               setStep(resumeStep);
              }
            }
         });
@@ -271,7 +289,7 @@ export default function OnboardingWizard() {
       const isStandalone = (window.navigator as any).standalone;
       if (isIOS && !isStandalone) {
         setShowIOSInstall(true);
-        return; // Pause here
+        return; 
       }
     }
 
@@ -279,7 +297,20 @@ export default function OnboardingWizard() {
        const stepsList: WizardStep[] = ['profile', 'upload', 'batch_select', 'verify', 'commute', 'wake_sleep', 'semester', 'intensity', 'generating'];
        const num = stepsList.indexOf(nextStep) + 1;
        const { db } = await import('@/lib/firebase/clientApp');
-       await setDoc(doc(db, "users", user!.uid), { onboarding_step: num }, { merge: true });
+       // Save draft data along with step
+       await setDoc(doc(db, "users", user!.uid), { 
+         onboarding_step: num,
+         name,
+         batch,
+         wake_time: wakeTime,
+         sleep_time: sleepTime,
+         morning_commute_mins: morningCommute,
+         Evening_commute_mins: eveningCommute,
+         rush_hour_buffer: rushHourBuffer,
+         semester_weeks: semesterWeeks,
+         checkin_intensity: intensity,
+         updated_at: serverTimestamp()
+       }, { merge: true });
     } catch(e) {}
   };
 
@@ -554,7 +585,7 @@ export default function OnboardingWizard() {
           )}
 
           {step === 'verify' && (
-            <div className="w-full max-w-4xl flex flex-col items-center animate-in fade-in duration-700 pb-16">
+            <div className="w-full max-w-4xl flex flex-col items-center animate-in fade-in duration-700 relative">
               {classes.length === 0 ? (
                 <>
                   <h2 className="font-heading text-[32px] text-[#1A1A2E] leading-tight mb-2 text-center">Let&apos;s add your classes manually</h2>
@@ -581,10 +612,14 @@ export default function OnboardingWizard() {
                  </div>
                )}
 
-              <div className="w-full max-w-2xl bg-white p-6 rounded-[20px] shadow-sm border border-[#E5E7EB] mb-10">
+              {/* ── FORM SECTION ── */}
+              <div className="w-full max-w-2xl bg-white p-6 rounded-[20px] shadow-sm border border-[#E5E7EB] mb-6">
                 <h3 className="font-bold text-[#1A1A2E] mb-4">Add Class</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input type="text" placeholder="Subject Name" value={manualForm.subject} onChange={e => setManualForm({...manualForm, subject: e.target.value})} className="col-span-1 md:col-span-2 w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
+                  <div className="col-span-1 md:col-span-2">
+                    <input id="subject-input" type="text" placeholder="Subject Name e.g. Physics" value={manualForm.subject} onChange={e => { setManualForm({...manualForm, subject: e.target.value}); setFormErrors(prev => ({...prev, subject: ''})); }} className={`w-full h-12 bg-[#F9FAFB] border rounded-xl px-4 outline-none focus:border-[#6366F1] ${formErrors.subject ? 'border-red-400 bg-red-50' : 'border-[#E5E7EB]'}`} />
+                    {formErrors.subject && <p className="text-red-500 text-xs mt-1">{formErrors.subject}</p>}
+                  </div>
                   
                   <div className="flex bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl p-1">
                     <button onClick={() => setManualForm({...manualForm, type: 'Theory'})} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${manualForm.type === 'Theory' ? 'bg-white shadow-sm text-[#1A1A2E]' : 'text-[#9CA3AF]'}`}>Theory</button>
@@ -592,28 +627,48 @@ export default function OnboardingWizard() {
                   </div>
 
                   <div className="flex gap-2">
-                    <input type="time" value={manualForm.startTime} onChange={e => setManualForm({...manualForm, startTime: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
-                    <input type="time" value={manualForm.endTime} onChange={e => setManualForm({...manualForm, endTime: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
+                    <div className="flex-1">
+                      <input type="time" value={manualForm.startTime} onChange={e => { setManualForm({...manualForm, startTime: e.target.value}); setFormErrors(prev => ({...prev, startTime: ''})); }} className={`w-full h-12 bg-[#F9FAFB] border rounded-xl px-4 outline-none focus:border-[#6366F1] ${formErrors.startTime ? 'border-red-400 bg-red-50' : 'border-[#E5E7EB]'}`} />
+                      {formErrors.startTime && <p className="text-red-500 text-xs mt-1">{formErrors.startTime}</p>}
+                    </div>
+                    <div className="flex-1">
+                      <input type="time" value={manualForm.endTime} onChange={e => { setManualForm({...manualForm, endTime: e.target.value}); setFormErrors(prev => ({...prev, endTime: ''})); }} className={`w-full h-12 bg-[#F9FAFB] border rounded-xl px-4 outline-none focus:border-[#6366F1] ${formErrors.endTime ? 'border-red-400 bg-red-50' : 'border-[#E5E7EB]'}`} />
+                      {formErrors.endTime && <p className="text-red-500 text-xs mt-1">{formErrors.endTime}</p>}
+                    </div>
                   </div>
 
-                  <div className="col-span-1 md:col-span-2 flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                    {DAYS_OF_WEEK.map(day => (
-                      <button key={day} onClick={() => {
-                        const days = manualForm.days.includes(day) ? manualForm.days.filter(d => d !== day) : [...manualForm.days, day];
-                        setManualForm({...manualForm, days});
-                      }} className={`px-4 py-2 shrink-0 rounded-full border text-xs font-bold transition-all ${manualForm.days.includes(day) ? 'bg-[#6366F1] border-[#6366F1] text-white' : 'bg-[#F9FAFB] border-[#E5E7EB] text-[#6B7280]'}`}>
-                        {day.substring(0,3)}
-                      </button>
-                    ))}
+                  <div className="col-span-1 md:col-span-2">
+                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                      {DAYS_OF_WEEK.map(day => (
+                        <button key={day} onClick={() => {
+                          const days = manualForm.days.includes(day) ? manualForm.days.filter(d => d !== day) : [...manualForm.days, day];
+                          setManualForm({...manualForm, days});
+                          setFormErrors(prev => ({...prev, days: ''}));
+                        }} className={`px-4 py-2 shrink-0 rounded-full border text-xs font-bold transition-all ${manualForm.days.includes(day) ? 'bg-[#6366F1] border-[#6366F1] text-white' : 'bg-[#F9FAFB] border-[#E5E7EB] text-[#6B7280]'}`}>
+                          {day.substring(0,3)}
+                        </button>
+                      ))}
+                    </div>
+                    {formErrors.days && <p className="text-red-500 text-xs mt-1">{formErrors.days}</p>}
                   </div>
 
                   <input type="text" placeholder="Room (Optional)" value={manualForm.room} onChange={e => setManualForm({...manualForm, room: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
                   <input type="text" placeholder="Faculty (Optional)" value={manualForm.faculty} onChange={e => setManualForm({...manualForm, faculty: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
                 </div>
+
+                {/* + Add Class — INSIDE the form */}
                 <button onClick={() => {
-                  if (!manualForm.subject) return toast.error("Subject is required");
-                  if (manualForm.days.length === 0) return toast.error("Select at least one day");
-                  
+                  const newErrors: Record<string, string> = {};
+                  if (!manualForm.subject.trim()) newErrors.subject = 'Subject name is required';
+                  if (manualForm.days.length === 0) newErrors.days = 'Select at least one day';
+                  if (!manualForm.startTime) newErrors.startTime = 'Start time is required';
+                  if (!manualForm.endTime) newErrors.endTime = 'End time is required';
+                  const toMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+                  if (manualForm.startTime && manualForm.endTime && toMins(manualForm.endTime) <= toMins(manualForm.startTime)) {
+                    newErrors.endTime = 'End time must be after start time';
+                  }
+                  if (Object.keys(newErrors).length > 0) { setFormErrors(newErrors); return; }
+
                   const formatTime = (time24: string) => {
                     const [h, m] = time24.split(':').map(Number);
                     const ampm = h >= 12 ? 'PM' : 'AM';
@@ -621,121 +676,34 @@ export default function OnboardingWizard() {
                     return `${h12}:${m.toString().padStart(2,'0')} ${ampm}`;
                   };
 
-                  setClasses([{ ...manualForm, startTime: formatTime(manualForm.startTime), endTime: formatTime(manualForm.endTime), batch: 'All', uncertain: false }, ...classes]);
-                  setManualForm({ subject: '', type: 'Theory', startTime: '09:00', endTime: '10:00', days: ['MONDAY'], room: '', faculty: '' });
+                  setClasses(prev => [{ ...manualForm, startTime: formatTime(manualForm.startTime), endTime: formatTime(manualForm.endTime), batch: 'All', uncertain: false }, ...prev]);
+                  toast.success(`${manualForm.subject} added!`);
+                  setManualForm(prev => ({ ...prev, subject: '', room: '', faculty: '' }));
+                  setFormErrors({});
+                  setTimeout(() => document.getElementById('subject-input')?.focus(), 100);
                 }} className="w-full mt-4 bg-[#6366F1] hover:bg-[#4F46E5] text-white py-3 rounded-xl font-bold shadow-md transition-all">
                   + Add Class
                 </button>
               </div>
 
-              {/* Day Filter Slider */}
-              <div className="w-full overflow-x-auto custom-scrollbar mb-8 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 flex justify-center">
-                <div className="flex gap-2 min-w-max bg-white p-1 rounded-full border border-[#E5E7EB]">
-                  {DAYS_OF_WEEK.map(dayText => {
-                     const isSelected = activeDay === dayText;
-                     const hasClasses = classes.some(c => c.days.map(d => String(d).toUpperCase()).includes(dayText));
-                     
-                     return (
-                       <button 
-                         key={dayText}
-                         onClick={() => setActiveDay(dayText)}
-                         className={`px-5 py-2.5 rounded-full text-[12px] font-bold tracking-widest transition-all ${
-                           isSelected 
-                             ? 'bg-[#1A1A2E] text-white shadow-md' 
-                             : hasClasses 
-                                ? 'bg-transparent text-[#4B5563] hover:bg-[#F3F4F6]' 
-                                : 'bg-transparent text-[#9CA3AF] opacity-50'
-                         }`}
-                       >
-                         {dayText.substring(0, 3)}
-                       </button>
-                     );
-                  })}
-                </div>
-              </div>
-
-              {/* Class Grid for Active Day */}
-              <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-3 mb-10">
-                {classes
-                   .filter(c => c.days.map(d => String(d).toUpperCase()).includes(activeDay))
-                   .sort((a,b) => {
-                       // Sort by startTime
-                       const timeToVal = (t: string) => {
-                          const [hourStr, part] = t.split(' ');
-                          let [h, m] = hourStr.split(':').map(Number);
-                          if (part?.toUpperCase() === 'PM' && h !== 12) h += 12;
-                          if (part?.toUpperCase() === 'AM' && h === 12) h = 0;
-                          return h * 60 + (m || 0);
-                       };
-                       return timeToVal(a.startTime) - timeToVal(b.startTime);
-                   })
-                   .map(cls => {
-                     const origIdx = classes.indexOf(cls);
-                     if (origIdx === -1) return null;
-
-                     return (
-                      <div key={origIdx} className={`bg-white p-4 rounded-[16px] shadow-[0_2px_12px_rgba(0,0,0,0.04)] border ${cls.uncertain ? 'border-l-4 border-l-[#F59E0B] border-[#F59E0B]/20' : 'border-[#E5E7EB]'} flex items-start gap-4 animate-in zoom-in-95 duration-300 relative group`}>
-                        <button onClick={() => setClasses(classes.filter((_, i) => i !== origIdx))} className="absolute top-2 right-2 text-[#9CA3AF] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <X className="w-4 h-4" />
-                        </button>
-                        <div className="w-10 h-10 shrink-0 rounded-[10px] bg-[#EEF2FF] flex items-center justify-center text-[#6366F1]">
-                           <BookOpen className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <input 
-                            className="w-full font-bold text-[15px] text-[#1A1A2E] bg-transparent outline-none focus:text-[#6366F1] transition-colors truncate"
-                            value={cls.subject}
-                            onChange={(e) => {
-                              const newClasses = [...classes];
-                              newClasses[origIdx] = { ...cls, subject: e.target.value };
-                              setClasses(newClasses);
-                            }}
-                          />
-                          <div className="flex gap-2 items-center mt-2 flex-wrap">
-                            <span className="text-[11px] text-[#9CA3AF] font-medium tracking-tight whitespace-nowrap bg-[#F3F4F6] px-2 py-0.5 rounded-[6px]">{cls.startTime} - {cls.endTime}</span>
-                            <select 
-                              value={cls.type || 'Theory'} 
-                              onChange={(e) => {
-                                const newClasses = [...classes];
-                                newClasses[origIdx] = { ...cls, type: e.target.value };
-                                setClasses(newClasses);
-                              }}
-                              className="text-[10px] font-bold uppercase tracking-widest bg-[#EEF2FF] text-[#6366F1] px-1.5 py-0.5 rounded-[6px] outline-none cursor-pointer border border-[#EEF2FF] hover:border-[#6366F1]/50 transition-colors"
-                            >
-                              <option value="Theory">THEORY</option>
-                              <option value="Practical">PRACTICAL</option>
-                            </select>
-                            {cls.room && (
-                              <span className="text-[10px] text-[#4B5563] font-bold bg-[#F3F4F6] px-1.5 py-0.5 rounded-[6px]">
-                                {cls.room}
-                              </span>
-                            )}
-                            {cls.faculty && (
-                              <span className="text-[11px] text-[#4B5563] font-medium">
-                                {cls.faculty}
-                              </span>
-                            )}
-                            {cls.batch && cls.batch !== 'All' && (
-                              <span className="text-[11px] bg-[#EEF2FF] text-[#6366F1] font-bold px-2 py-0.5 rounded-[6px] border border-[#6366F1]/20">
-                                {cls.batch}
-                              </span>
-                            )}
-                          </div>
-                        </div>
+              {/* ── ADDED CLASSES LIST ── */}
+              {classes.length > 0 && (
+                <div className="w-full max-w-2xl mb-6">
+                  <p className="text-[11px] text-[#9CA3AF] uppercase tracking-widest font-bold mb-3">{classes.length} classes added</p>
+                  {classes.map((cls, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 bg-[#F8F7FF] rounded-xl mb-2" style={{ animation: `fadeSlideUp 300ms ease-out ${i * 60}ms both` }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#1A1A2E] truncate">{cls.subject}</p>
+                        <p className="text-xs text-gray-400">{cls.days.map(d => d.slice(0,3)).join(', ')} · {cls.startTime} – {cls.endTime}</p>
                       </div>
-                     );
-                   })
-                }
-                
-                {classes.filter(c => c.days.map(d => String(d).toUpperCase()).includes(activeDay)).length === 0 && (
-                  <div className="col-span-1 md:col-span-2 py-10 flex flex-col items-center justify-center text-center opacity-60">
-                     <span className="text-[40px] mb-2">🌴</span>
-                     <p className="text-[14px] font-bold text-[#4B5563]">No classes scheduled on {activeDay}.</p>
-                  </div>
-                )}
-              </div>
-              
-              {/* Natural Language AI Corrector Hatch */}
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${cls.type === 'Practical' ? 'bg-[#FFF0F3] text-[#E11D48]' : 'bg-[#EEF2FF] text-[#6366F1]'}`}>{cls.type || 'Theory'}</span>
+                      <button onClick={() => setClasses(classes.filter((_, idx) => idx !== i))} className="text-gray-300 hover:text-red-400 text-lg shrink-0">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Natural Language AI Corrector */}
               <div className="w-full max-w-2xl bg-white p-2 pl-4 rounded-[16px] flex flex-col md:flex-row gap-2 items-center mb-12 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border-[1.5px] border-[#6366F1]/30">
                 <Wand2 className="w-5 h-5 text-[#6366F1] shrink-0 hidden md:block" />
                 <input 
@@ -755,12 +723,20 @@ export default function OnboardingWizard() {
                 </button>
               </div>
 
-              <div className="w-full max-w-md sticky bottom-0 bg-gradient-to-t from-[#FAFAF8] via-[#FAFAF8] to-transparent pt-6 pb-2">
-                <button disabled={classes.length === 0} onClick={() => advanceStep('commute')} className="w-full bg-[#6366F1] hover:bg-[#4F46E5] text-white py-4 rounded-[14px] font-semibold text-[14px] shadow-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
-                  <span>Done — Build My Schedule</span>
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
+              {/* Empty bottom padding so content doesn't hide behind fixed Done button */}
+              <div className="h-24" />
+
+              {/* ── DONE BUTTON — FIXED TO BOTTOM, only when classes exist ── */}
+              {classes.length > 0 && (
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-sm border-t border-gray-100 z-50">
+                  <div className="max-w-md mx-auto">
+                    <button disabled={classes.length === 0} onClick={() => advanceStep('commute')} className="w-full bg-[#6366F1] hover:bg-[#4F46E5] text-white py-4 rounded-[14px] font-semibold text-[14px] shadow-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                      <span>Done — Build My Schedule ({classes.length} classes)</span>
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

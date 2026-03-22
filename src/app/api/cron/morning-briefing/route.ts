@@ -18,39 +18,29 @@ export async function GET(req: NextRequest) {
       const userData = userDoc.data();
       if (!userData.onesignal_player_id) continue;
 
-      // Get today's classes
-      const classesSnap = await adminDb.collection('classes')
+      // Get today's blocks
+      const dateStr = today.toISOString().split('T')[0];
+      const blocksSnap = await adminDb.collection('schedule_blocks')
         .where('user_id', '==', userDoc.id)
+        .where('date', '==', dateStr)
         .get();
 
-      const todaysClasses = classesSnap.docs
-        .map(d => d.data())
-        .filter(cls => cls.days?.some((d: string) => d.toUpperCase() === dayName.toUpperCase()))
-        .sort((a, b) => {
-          const tv = (t: string) => { const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3]?.toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3]?.toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
-          return tv(a.startTime || '') - tv(b.startTime || '');
-        });
+      const blocks = blocksSnap.docs.map(d => d.data());
+      const classBlocks = blocks.filter(b => b.block_type === 'class').sort((a, b) => {
+        const tv = (t: string) => { const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 0; let h = parseInt(m[1]); if (m[3]?.toUpperCase() === 'PM' && h !== 12) h += 12; if (m[3]?.toUpperCase() === 'AM' && h === 12) h = 0; return h * 60 + parseInt(m[2]); };
+        return tv(a.start_time || '') - tv(b.start_time || '');
+      });
 
       let message: string;
       const name = (userData.name || 'there').split(' ')[0];
 
-      if (todaysClasses.length === 0) {
-        message = `Good morning ${name}! No classes today — rest up! 🌿`;
+      if (classBlocks.length === 0) {
+        message = `Good morning ${name}! No classes today — enjoy your day off! 🌿`;
       } else {
-        const first = todaysClasses[0];
-        const commute = userData.morning_commute_mins || 30;
-        // Calculate leave time
-        const m = (first.startTime || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
-        let leaveStr = '';
-        if (m) {
-          let h = parseInt(m[1]), mn = parseInt(m[2]);
-          if (m[3]?.toUpperCase() === 'PM' && h !== 12) h += 12;
-          if (m[3]?.toUpperCase() === 'AM' && h === 12) h = 0;
-          const totalMin = h * 60 + mn - commute;
-          const lh = Math.floor(totalMin / 60), lm = totalMin % 60;
-          leaveStr = `${lh > 12 ? lh - 12 : lh}:${String(lm).padStart(2, '0')} ${lh >= 12 ? 'PM' : 'AM'}`;
-        }
-        message = `Good morning ${name}! ${todaysClasses.length} classes today — leave by ${leaveStr}. First up: ${first.subject}.`;
+        const first = classBlocks[0];
+        const firstTravel = blocks.find(b => b.block_type === 'travel' && b.label === 'Travel to College');
+        const leaveStr = firstTravel ? firstTravel.start_time : first.start_time;
+        message = `Good morning ${name}! ${classBlocks.length} classes today — leave by ${leaveStr}. First up: ${first.label}.`;
       }
 
       // Send via OneSignal

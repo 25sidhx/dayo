@@ -10,6 +10,9 @@ import { useAuth } from "@/context/AuthContext";
 import { doc, getDoc, collection, query, where, getDocs, setDoc, serverTimestamp } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import toast from "react-hot-toast";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import MobileNav from "@/components/MobileNav";
 
 const getWeekDays = () => {
   const today = new Date();
@@ -49,6 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [dataLoaded, setDataLoaded] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const weekDays = getWeekDays();
+  const isOnline = useOnlineStatus();
 
   useEffect(() => { if (!authLoading && !user) router.replace('/login'); }, [user, authLoading, router]);
 
@@ -188,7 +192,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </aside>
 
         {/* ── MAIN CONTENT ── */}
-        <main className="flex flex-col overflow-y-auto bg-[#FAFAF8] h-full pb-[70px] md:pb-0">
+        <main className="flex flex-col overflow-y-auto bg-[#FAFAF8] h-full pb-[80px] md:pb-0">
+          {/* Offline banner */}
+          {!isOnline && (
+            <div className="bg-amber-400 text-amber-900 text-center text-sm py-2 z-50 font-medium">📡 Offline — showing cached data</div>
+          )}
           {/* Mobile header */}
           <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-[#F3F4F6] bg-white sticky top-0 z-30">
             <Link href="/dashboard"><h1 className="font-heading text-[18px] text-[#1A1A2E]">Day<span className="text-[#6366F1]">o</span></h1></Link>
@@ -198,8 +206,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               ))}
             </div>
           </div>
-          {children}
+          <ErrorBoundary>{children}</ErrorBoundary>
         </main>
+
+        <MobileNav />
 
         {/* ── RIGHT PANEL (hidden on mobile + tablet) ── */}
         <aside className="hidden lg:flex flex-col gap-[16px] p-[20px_16px] border-l-[0.5px] border-[#F3F4F6] overflow-y-auto bg-[#FAFAF8] custom-scrollbar">

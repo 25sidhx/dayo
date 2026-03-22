@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, getDocs, collection, query, where, deleteDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
 
 export default function SettingsPage() {
@@ -14,6 +14,9 @@ export default function SettingsPage() {
     semesterStart: new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [dataHealth, setDataHealth] = useState<{ classes: number; blocks: number; attendance: number } | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -51,6 +54,24 @@ export default function SettingsPage() {
       toast.success('Settings saved!');
     } catch (e: any) { toast.error(e.message); }
     setSaving(false);
+  };
+
+  const handleRegenerate = async () => {
+    if (!user) return;
+    setRegenerating(true);
+    const toastId = toast.loading("Building your schedule...");
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/generate-schedule', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      if (!res.ok) throw new Error("Failed to generate schedule");
+      toast.success("Schedule updated!", { id: toastId });
+    } catch (e: any) {
+      toast.error(e.message, { id: toastId });
+    }
+    setRegenerating(false);
   };
 
   const inputCls = "w-full h-[48px] bg-white border-[1.5px] border-[#F3F4F6] rounded-[12px] px-4 text-[14px] text-[#1A1A2E] focus:border-[#6366F1] outline-none transition-colors";
@@ -141,6 +162,61 @@ export default function SettingsPage() {
               >{opt}</button>
             ))}
           </div>
+        </div>
+
+        {/* Regeneration */}
+        <div className="bg-white rounded-[16px] p-5 shadow-sm border border-[#F3F4F6] flex items-center justify-between">
+          <div>
+            <h3 className="text-[14px] font-bold text-[#1A1A2E]">Regenerate Schedule</h3>
+            <p className="text-[12px] text-[#9CA3AF] mt-1">Rebuild your week using current settings</p>
+          </div>
+          <button 
+            onClick={handleRegenerate} 
+            disabled={regenerating}
+            className="px-4 py-2 bg-[#EEF2FF] hover:bg-[#E0E7FF] text-[#6366F1] font-bold text-[13px] rounded-[10px] transition-colors disabled:opacity-50"
+          >
+            {regenerating ? 'Working...' : 'Regenerate'}
+          </button>
+        </div>
+
+        {/* Data Health */}
+        <div className="bg-white rounded-[16px] p-5 shadow-sm border border-[#F3F4F6]">
+          <h3 className="text-[13px] font-bold text-[#1A1A2E] mb-3">Data Health</h3>
+          {dataHealth ? (
+            <div className="space-y-2 text-[13px]">
+              <p className={dataHealth.classes > 0 ? 'text-[#059669]' : 'text-[#EF4444]'}>{dataHealth.classes > 0 ? '✅' : '⚠️'} {dataHealth.classes} classes saved</p>
+              <p className={dataHealth.blocks > 0 ? 'text-[#059669]' : 'text-[#F59E0B]'}>{dataHealth.blocks > 0 ? '✅' : '⚠️'} {dataHealth.blocks > 0 ? `Schedule generated (${dataHealth.blocks} blocks)` : 'No schedule generated yet'}</p>
+              <p className={dataHealth.attendance > 0 ? 'text-[#059669]' : 'text-[#9CA3AF]'}>{dataHealth.attendance > 0 ? '✅' : 'ℹ️'} {dataHealth.attendance > 0 ? `${dataHealth.attendance} attendance records` : 'No attendance logged yet'}</p>
+            </div>
+          ) : (
+            <button onClick={async () => {
+              if (!user) return;
+              const { db } = await import('@/lib/firebase/clientApp');
+              const [classesSnap, blocksSnap, attSnap] = await Promise.all([
+                getDocs(query(collection(db, 'classes'), where('user_id', '==', user.uid))),
+                getDocs(query(collection(db, 'schedule_blocks'), where('user_id', '==', user.uid))),
+                getDocs(query(collection(db, 'attendance'), where('user_id', '==', user.uid)))
+              ]);
+              setDataHealth({ classes: classesSnap.size, blocks: blocksSnap.size, attendance: attSnap.size });
+            }} className="text-[#6366F1] text-[13px] font-semibold hover:underline">Check Data Health →</button>
+          )}
+          <button onClick={async () => {
+            if (!user || !confirm('This will delete ALL your classes, schedule blocks, and attendance records. Are you sure?')) return;
+            setClearing(true);
+            try {
+              const { db } = await import('@/lib/firebase/clientApp');
+              const collections = ['classes', 'schedule_blocks', 'attendance'];
+              for (const col of collections) {
+                const snap = await getDocs(query(collection(db, col), where('user_id', '==', user.uid)));
+                await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+              }
+              setDataHealth({ classes: 0, blocks: 0, attendance: 0 });
+              toast.success('All data cleared.');
+            } catch (e: any) { toast.error(e.message); }
+            setClearing(false);
+          }} disabled={clearing} className="mt-3 text-[12px] text-red-400 hover:text-red-600 font-medium transition-colors disabled:opacity-50">
+            {clearing ? 'Clearing...' : '🗑 Clear All Data'}
+          </button>
         </div>
 
         {/* Account Info */}

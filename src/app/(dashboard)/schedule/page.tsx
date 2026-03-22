@@ -2,22 +2,50 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, BookOpen, Bus, Coffee, User, Sun, Moon, PenTool } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, serverTimestamp, updateDoc, doc } from "firebase/firestore";
 import toast from "react-hot-toast";
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-// Dedup helper
-const dedup = (classes: any[]) => {
-  const seen = new Set();
-  return classes.filter(cls => {
-    const key = `${cls.subject}-${(cls.days||[]).join(',')}-${cls.startTime}-${cls.batch}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+type ScheduleBlock = {
+  id: string; date: string; block_type: 'class'|'travel'|'study'|'meal'|'prep'|'free'|'wake';
+  label: string; start_time: string; end_time: string; color: string; icon: string;
+  subject_name?: string; class_id?: string; room?: string; faculty?: string; batch?: string;
+  class_type?: string; is_bunked: boolean; is_cancelled: boolean;
+};
+
+const IconMap: any = { 
+  class: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full p-0.5">
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
+      <path d="M8 7h6" /><path d="M8 11h8" /><path d="M8 15h6" />
+    </svg>
+  ),
+  bus: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full p-0.5">
+      <rect width="16" height="10" x="4" y="3" rx="2" />
+      <path d="M9 21h6" /><path d="M4 13h16" /><path d="M7 3v10" /><path d="M17 3v10" />
+      <circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" />
+    </svg>
+  ),
+  study: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full p-0.5">
+      <path d="M21 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2" />
+      <path d="M21 17v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2" />
+      <path d="M21 7H3" /><path d="M21 17H3" /><path d="M18 7v10" /><path d="M6 7v10" />
+    </svg>
+  ),
+  meal: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full p-0.5">
+      <path d="M3 11c0 6.627 5.373 12 12 12s12-5.373 12-12H3Z" />
+      <path d="M7 2h2v3" /><path d="M11 2h2v3" /><path d="M15 2h2v3" />
+    </svg>
+  ),
+  prep: User,
+  free: Sun,
+  moon: Moon
 };
 
 // Parse "12:10 PM" → minutes from midnight
@@ -33,23 +61,17 @@ const timeToMin = (t: string) => {
   return h * 60 + m;
 };
 
-// Timeline runs from 12:00 PM to 6:30 PM (390 minutes range)
-const TIMELINE_START = 12 * 60; // 720 = noon
-const TIMELINE_END = 18 * 60 + 30; // 1110 = 6:30 PM
+// Timeline runs from 6:00 AM to 11:30 PM (1050 minutes range)
+const TIMELINE_START = 6 * 60; // 360 = 6:00 AM
+const TIMELINE_END = 23 * 60 + 30; // 1410 = 11:30 PM
 const TIMELINE_RANGE = TIMELINE_END - TIMELINE_START;
-const PX_PER_MIN = 1.4; // pixels per minute
+const PX_PER_MIN = 1.6; // slightly taller for better readability
 const TIMELINE_HEIGHT = TIMELINE_RANGE * PX_PER_MIN;
 
-// Recess blocks
-const RECESSES = [
-  { start: timeToMin('2:00 PM'), end: timeToMin('2:20 PM'), label: 'Recess' },
-  { start: timeToMin('4:10 PM'), end: timeToMin('4:15 PM'), label: 'Recess' },
-];
-
-// Hour labels
-const HOUR_LABELS = [12, 1, 2, 3, 4, 5, 6].map(h => ({
-  label: `${h} ${h === 12 ? 'PM' : 'PM'}`,
-  min: (h === 12 ? 12 : h + 12) * 60
+// Hour labels (6 AM to 11 PM)
+const HOUR_LABELS = Array.from({length: 18}, (_, i) => i + 6).map(h => ({
+  label: `${h > 12 ? h - 12 : (h === 0 ? 12 : h)} ${h >= 12 ? 'PM' : 'AM'}`,
+  min: h * 60
 }));
 
 export default function SchedulePage() {
@@ -60,7 +82,7 @@ export default function SchedulePage() {
   const defaultDay = DAYS.includes(todayName) ? todayName : 'Monday';
 
   const [activeDay, setActiveDay] = useState(dayParam && DAYS.includes(dayParam) ? dayParam : defaultDay);
-  const [allClasses, setAllClasses] = useState<any[]>([]);
+  const [allBlocks, setAllBlocks] = useState<ScheduleBlock[]>([]);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [currentMin, setCurrentMin] = useState(new Date().getHours() * 60 + new Date().getMinutes());
 
@@ -76,31 +98,42 @@ export default function SchedulePage() {
     if (!user) return;
     const load = async () => {
       const { db } = await import('@/lib/firebase/clientApp');
-      const snap = await getDocs(query(collection(db, 'classes'), where('user_id', '==', user.uid)));
-      setAllClasses(dedup(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+      const snap = await getDocs(query(collection(db, 'schedule_blocks'), where('user_id', '==', user.uid)));
+      setAllBlocks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ScheduleBlock)));
     };
     load();
   }, [user]);
 
-  const dayClasses = allClasses.filter(cls =>
-    cls.days?.some((d: string) => d.toUpperCase() === activeDay.toUpperCase())
-  ).sort((a, b) => timeToMin(a.startTime) - timeToMin(b.startTime));
+  const activeDayBlocks = allBlocks.filter(b => {
+    const d = new Date(b.date);
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+    return dayName.toUpperCase() === activeDay.toUpperCase();
+  }).sort((a, b) => timeToMin(a.start_time) - timeToMin(b.start_time));
 
   // Count classes per day for tabs
-  const dayClassCounts = DAYS.map(day =>
-    allClasses.filter(cls => cls.days?.some((d: string) => d.toUpperCase() === day.toUpperCase())).length
-  );
+  const dayClassCounts = DAYS.map(day => {
+    return allBlocks.filter(b => {
+      const d = new Date(b.date);
+      return d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() === day.toUpperCase() && b.block_type === 'class';
+    }).length;
+  });
 
-  const handleBunk = async (cls: any, status: string) => {
+  const handleBunk = async (cls: ScheduleBlock, status: string) => {
     if (!user) return;
     setOpenMenu(null);
     try {
       const { db } = await import('@/lib/firebase/clientApp');
       await addDoc(collection(db, 'attendance'), {
-        user_id: user.uid, subject_name: cls.subject, date: new Date().toISOString().split('T')[0],
+        user_id: user.uid, subject_name: cls.subject_name || cls.label, date: cls.date,
         status, logged_at: serverTimestamp()
       });
-      toast.success(status === 'bunked' ? `Bunked ${cls.subject}` : `Marked ${cls.subject} as cancelled`);
+      // A full bunk cascade will occur on backend if we hit API, but for frontend consistency we update block
+      await updateDoc(doc(db, 'schedule_blocks', cls.id), { is_bunked: true });
+      const newBlocks = [...allBlocks];
+      const i = newBlocks.findIndex(x => x.id === cls.id);
+      if(i>-1) newBlocks[i].is_bunked = true;
+      setAllBlocks(newBlocks);
+      toast.success(status === 'bunked' ? `Bunked ${cls.label}` : `Marked ${cls.label} as cancelled`);
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -133,10 +166,10 @@ export default function SchedulePage() {
       </div>
 
       {/* Timeline */}
-      {dayClasses.length === 0 ? (
+      {activeDayBlocks.length === 0 ? (
         <div className="py-20 flex flex-col items-center text-center">
           <span className="text-[48px] mb-4">🌴</span>
-          <p className="text-[14px] font-semibold text-[#1A1A2E]">No classes on {activeDay}</p>
+          <p className="text-[14px] font-semibold text-[#1A1A2E]">No schedule on {activeDay}</p>
           <p className="text-[12px] text-[#9CA3AF]">Enjoy your free day!</p>
         </div>
       ) : (
@@ -176,64 +209,60 @@ export default function SchedulePage() {
               <div className="absolute left-0 right-0 h-[2px] bg-[#EF4444] z-20" style={{ top: `${(currentMin - TIMELINE_START) * PX_PER_MIN}px` }} />
             )}
 
-            {/* Recess blocks */}
-            {RECESSES.map((r, i) => {
-              const top = (r.start - TIMELINE_START) * PX_PER_MIN;
-              const height = (r.end - r.start) * PX_PER_MIN;
-              return (
-                <div key={i} className="absolute left-0 right-0 bg-[#F9FAFB] rounded-[6px] flex items-center justify-center z-5" style={{ top: `${top}px`, height: `${height}px` }}>
-                  <span className="text-[10px] uppercase tracking-[0.15em] text-[#D1D5DB] font-bold">Recess</span>
-                </div>
-              );
-            })}
-
-            {/* Class blocks */}
-            {dayClasses.map((cls) => {
-              const startMin = timeToMin(cls.startTime);
-              const endMin = timeToMin(cls.endTime);
+            {/* Generated Blocks */}
+            {activeDayBlocks.map((block) => {
+              const startMin = timeToMin(block.start_time);
+              const endMin = timeToMin(block.end_time);
               const top = (startMin - TIMELINE_START) * PX_PER_MIN;
-              const height = Math.max((endMin - startMin) * PX_PER_MIN, 40);
-              const isPractical = (cls.type || '').toLowerCase() === 'practical';
+              const height = Math.max((endMin - startMin) * PX_PER_MIN, Math.min(24, (endMin - startMin) * PX_PER_MIN));
+              
+              // Skip blocks outside timeline range to prevent huge renders
+              if (endMin < TIMELINE_START || startMin > TIMELINE_END) return null;
+
+              const isClass = block.block_type === 'class';
+              const IconComp = IconMap[block.icon] || BookOpen;
 
               return (
-                <div key={cls.id} className="absolute left-0 right-0 group z-10"
+                <div key={block.id} className="absolute left-0 right-0 group z-10"
                   style={{ top: `${top}px`, height: `${height}px`, paddingBottom: '2px' }}
                 >
-                  <div className={`h-full rounded-[0_12px_12px_0] border-l-4 flex flex-col justify-center px-4 py-2 relative overflow-hidden transition-shadow hover:shadow-md ${
-                    isPractical ? 'bg-[#FFF0F3] border-[#E11D48]' : 'bg-[#EEF2FF] border-[#6366F1]'
-                  }`}>
-                    {/* Subject */}
-                    <p className={`text-[13px] font-semibold leading-tight ${isPractical ? 'text-[#E11D48]' : 'text-[#6366F1]'}`}>
-                      {cls.subject}
-                    </p>
-                    {cls.faculty && <p className="text-[11px] text-[#9CA3AF] mt-0.5">{cls.faculty}</p>}
-
-                    {/* Bottom tags */}
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[9px] font-bold uppercase text-[#9CA3AF] bg-white/60 px-1.5 py-0.5 rounded-[4px]">
-                        {cls.startTime} – {cls.endTime}
-                      </span>
-                      {cls.room && <span className="text-[9px] text-[#9CA3AF] bg-white/60 px-1.5 py-0.5 rounded-[4px]">{cls.room}</span>}
-                      {cls.batch && cls.batch !== 'All' && (
-                        <span className="text-[9px] font-bold text-[#6366F1] bg-white/60 px-1.5 py-0.5 rounded-[4px]">{cls.batch}</span>
-                      )}
+                  <div className={`h-full rounded-[0_12px_12px_0] border-l-4 flex flex-col justify-center px-4 py-1.5 relative overflow-hidden transition-shadow hover:shadow-md ${block.is_bunked ? 'opacity-50' : ''}`}
+                    style={{ backgroundColor: `${block.color}15`, borderColor: block.color }}
+                  >
+                    <div className="flex items-center gap-2">
+                       <IconComp className="w-3.5 h-3.5" style={{ color: block.color }} />
+                       <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: isClass ? '#1A1A2E' : block.color}}>
+                         {block.label} {block.is_bunked ? '(BUNKED)' : ''}
+                       </p>
                     </div>
+
+                    {(block.room || block.faculty || isClass) && (
+                      <div className="flex items-center gap-1.5 mt-1 opacity-80 overflow-x-auto no-scrollbar">
+                        <span className="text-[9px] font-bold uppercase shrink-0" style={{ color: block.color }}>
+                          {block.start_time} – {block.end_time}
+                        </span>
+                        {block.room && <span className="text-[9px] px-1.5 py-0.5 rounded-[4px] shrink-0" style={{ backgroundColor: `${block.color}20`, color: block.color }}>{block.room}</span>}
+                        {block.faculty && <span className="text-[9px] px-1.5 py-0.5 rounded-[4px] shrink-0" style={{ backgroundColor: `${block.color}20`, color: block.color }}>{block.faculty}</span>}
+                        {block.class_type && <span className="text-[9px] px-1.5 py-0.5 rounded-[4px] font-bold shrink-0" style={{ backgroundColor: block.color, color: '#fff' }}>{block.class_type}</span>}
+                      </div>
+                    )}
 
                     {/* ⋯ Menu */}
-                    <div className="absolute top-2 right-2">
-                      <button onClick={() => setOpenMenu(openMenu === cls.id ? null : cls.id)}
-                        className="p-1 rounded-md bg-white/60 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <MoreHorizontal className="w-[14px] h-[14px] text-[#9CA3AF]" />
-                      </button>
-                      {openMenu === cls.id && (
-                        <div className="absolute right-0 top-7 bg-white rounded-[12px] shadow-xl border border-[#E5E7EB] z-50 w-[200px] py-1 animate-in fade-in zoom-in-95 duration-150">
-                          <button onClick={() => handleBunk(cls, 'bunked')} className="w-full text-left px-4 py-2.5 text-[12px] hover:bg-[#F3F4F6] font-medium">🚫 Bunk this class</button>
-                          <button onClick={() => handleBunk(cls, 'cancelled')} className="w-full text-left px-4 py-2.5 text-[12px] hover:bg-[#F3F4F6] font-medium">❌ Cancelled by professor</button>
-                          <button onClick={() => { setOpenMenu(null); toast('Coming soon!'); }} className="w-full text-left px-4 py-2.5 text-[12px] text-[#9CA3AF] hover:bg-[#F3F4F6] font-medium">🔄 Reschedule</button>
-                        </div>
-                      )}
-                    </div>
+                    {isClass && !block.is_bunked && (
+                      <div className="absolute top-2 right-2">
+                        <button onClick={() => setOpenMenu(openMenu === block.id ? null : block.id)}
+                          className="p-1 rounded-md bg-white hover:bg-[#F3F4F6] transition-colors"
+                        >
+                          <MoreHorizontal className="w-[14px] h-[14px] text-[#9CA3AF]" />
+                        </button>
+                        {openMenu === block.id && (
+                          <div className="absolute right-0 top-7 bg-white rounded-[12px] shadow-xl border border-[#E5E7EB] z-50 w-[200px] py-1 animate-in fade-in zoom-in-95 duration-150">
+                            <button onClick={() => handleBunk(block, 'bunked')} className="w-full text-left px-4 py-2.5 text-[12px] hover:bg-[#F3F4F6] font-medium">🚫 Bunk this class</button>
+                            <button onClick={() => handleBunk(block, 'cancelled')} className="w-full text-left px-4 py-2.5 text-[12px] hover:bg-[#F3F4F6] font-medium">❌ Cancelled by professor</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
