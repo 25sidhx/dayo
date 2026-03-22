@@ -1,211 +1,201 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { validateToken } from '@/lib/auth/validateToken';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { checkRateLimit } from '@/lib/rateLimit';
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { NextRequest } from 'next/server'
+import { adminAuth } from '@/lib/firebase/firebaseAdmin'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// FIX 4 — SAFE JSON PARSER
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function safeParseGeminiJSON(raw: string): any[] | null {
+export async function POST(req: NextRequest) {
+  
+  console.log('CHECKPOINT 1: Route hit')
+  
+  // Auth
   try {
-    // Remove markdown code blocks if present
-    let cleaned = raw
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
-
-    // Find the first [ and last ] to extract just the array
-    const start = cleaned.indexOf('[');
-    const end = cleaned.lastIndexOf(']');
-
-    if (start === -1 || end === -1) {
-      console.error('No JSON array found in response');
-      return null;
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return Response.json({ error: 'No auth token' }, { status: 401 })
     }
-
-    const jsonString = cleaned.slice(start, end + 1);
-    const parsed = JSON.parse(jsonString);
-
-    if (!Array.isArray(parsed)) {
-      console.error('Parsed result is not an array');
-      return null;
+    const token = authHeader.split(' ')[1]
+    const decoded = await adminAuth.verifyIdToken(token)
+    const uid = decoded.uid
+    
+    console.log('CHECKPOINT 2: Auth OK, uid:', uid)
+    
+    // Parse body
+    const body = await req.json()
+    const image = body.image || body.base64str // handle both frontend versions just in case
+    
+    if (!image || typeof image !== 'string' || image.length < 100) {
+      console.log('CHECKPOINT 3: No image')
+      return Response.json({ error: 'No image data', classes: [] }, { status: 400 })
     }
-
-    if (parsed.length === 0) {
-      console.error('Parsed array is empty');
-      return null;
+    
+    console.log('CHECKPOINT 3: Image OK, length:', image.length)
+    
+    // Clean base64 — remove prefix if present
+    const cleanBase64 = image.includes(',') ? image.split(',')[1] : image
+    
+    console.log('CHECKPOINT 4: Calling Gemini 2.0 Flash...')
+    
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 8192,
+      }
+    })
+    
+    const imagePart = {
+      inlineData: {
+        mimeType: 'image/jpeg' as const,
+        data: cleanBase64
+      }
     }
+    
+    const extractionPrompt = `You are reading a college timetable image.
+Extract every class and return as JSON.
 
-    return parsed;
-  } catch (err: any) {
-    console.error('JSON parse failed:', err.message);
-    console.error('Raw response was:', raw?.substring(0, 500));
-    return null;
+WHAT TO EXTRACT:
+- Subject/course name (exactly as written)
+- Day of week (full name: Monday not MON)  
+- Start time (12-hour format: 9:00 AM)
+- End time (12-hour format: 10:00 AM)
+- Room number if visible
+- Faculty name or initials if visible
+- Theory or Practical
+
+WHAT TO SKIP:
+- Cells saying RECESS, BREAK, LUNCH, FREE
+- Empty cells or cells with just a dash
+- Header row with day names
+- Header column with time labels
+
+BATCH SPLITS:
+If a cell has multiple subjects separated by / with group codes like (B1) (B2) or (A) (B) — create one entry per group.
+
+IMPORTANT:
+- Do NOT invent subjects not in the image
+- Do NOT add subjects from memory
+- Read ONLY what is visible in the image
+- If you cannot read a cell mark it as uncertain: true
+
+Return ONLY a JSON array, nothing else. No markdown. No explanation. Just JSON.
+
+[{"subject":"","type":"Theory","startTime":"9:00 AM","endTime":"10:00 AM","days":["Monday"],"room":"","faculty":"","batch":"All","uncertain":false}]`
+    
+    let classes = null
+    let passCount = 0
+    
+    // PASS 1
+    try {
+      const result1 = await model.generateContent([extractionPrompt, imagePart])
+      const text1 = result1.response.text()
+      
+      console.log('CHECKPOINT 5: Gemini responded, length:', text1.length)
+      console.log('CHECKPOINT 6: First 300 chars:', text1.substring(0, 300))
+      
+      classes = parseGeminiJSON(text1)
+      passCount = 1
+      
+      console.log('CHECKPOINT 7: Pass 1 extracted:', classes?.length || 0, 'classes')
+        
+    } catch (e: any) {
+      console.error('Pass 1 failed:', e.message)
+    }
+    
+    // PASS 2 — only if pass 1 got < 3 classes
+    if (!classes || classes.length < 3) {
+      console.log('Running pass 2...')
+      try {
+        const result2 = await model.generateContent([
+            extractionPrompt + 
+            '\n\nThe previous attempt found ' + (classes?.length || 0) + 
+            ' classes which seems too few. Please look more carefully at every cell in every row.',
+            imagePart
+          ])
+        const text2 = result2.response.text()
+        const classes2 = parseGeminiJSON(text2)
+        
+        if (classes2 && classes2.length > (classes?.length || 0)) {
+          classes = classes2
+          passCount = 2
+        }
+        
+        console.log('Pass 2 got:', classes2?.length || 0, 'classes')
+          
+      } catch (e: any) {
+        console.error('Pass 2 failed:', e.message)
+      }
+    }
+    
+    if (!classes || classes.length === 0) {
+      console.log('CHECKPOINT 8: Zero classes extracted')
+      return Response.json({
+        classes: [],
+        source: 'failed',
+        message: 'Could not extract classes'
+      })
+    }
+    
+    // Deduplicate
+    const seen = new Set<string>()
+    const unique = classes.filter(
+      (cls: any) => {
+        const key = [
+          cls.subject?.toLowerCase(),
+          cls.startTime,
+          (cls.days || []).sort().join(','),
+          cls.batch || 'All'
+        ].join('|')
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    
+    console.log('CHECKPOINT 8: Returning', unique.length, 'unique classes, passes used:', passCount)
+    
+    return Response.json({
+      classes: unique,
+      source: 'gemini',
+      count: unique.length,
+      passes: passCount
+    })
+    
+  } catch (error: any) {
+    console.error('Route error:', error.message)
+    return Response.json({ classes: [], source: 'error', error: error.message })
   }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// UNIVERSAL TIMETABLE PARSER PROMPT
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// FIX 2 — NEW GEMINI PROMPT
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SYSTEM_PROMPT = `You are an expert at reading college timetable images from any Indian university, college, or institution. You can read timetables from engineering, medical, arts, commerce, law, pharmacy, nursing, architecture, or any other field.
-
-YOUR ONLY JOB: Extract what you actually see in this image. Do not assume, do not guess, do not use any prior knowledge about subjects. Read ONLY what is written in the cells of this timetable.
-
-UNIVERSAL RULES FOR READING ANY TIMETABLE:
-
-STRUCTURE — Most Indian college timetables follow one of these layouts:
-  Layout A: Days as ROWS, Times as COLUMNS (rows say MON/TUE/WED or Monday etc)
-  Layout B: Times as ROWS, Days as COLUMNS (top row has day names)
-  Layout C: Day-wise tables, one per day
-
-Detect which layout this timetable uses before extracting anything.
-
-READING EACH CELL:
-  Take EXACTLY what is written in the cell as the subject name.
-  Do not expand abbreviations unless a legend/key is visible in the same image.
-  If a legend is visible, use it to expand.
-  If no legend is visible, use the abbreviation exactly as written.
-
-  Example: if cell says 'DBMS' — subject is 'DBMS' not 'Database Management Systems' (unless legend shows expansion)
-  Example: if cell says 'Anatomy' — subject is 'Anatomy'
-  Example: if cell says 'Contract Law' — subject is 'Contract Law'
-
-SKIP THESE COMPLETELY:
-  Any cell that says RECESS or BREAK
-  Any cell that says LUNCH
-  Any cell that says FREE or LIBRARY unless clearly a scheduled class
-  Any cell with only a dash - or empty
-  Header row with day names
-  Header column with time labels
-
-BATCH SPLITS:
-  If a cell contains multiple subjects separated by / or | with group codes, create a separate entry for each group.
-  Group codes can be: A/B, Batch1/Batch2, Div A/Div B, Gr1/Gr2, or any other format.
-
-TYPE DETECTION:
-  Mark as Practical if subject name contains: Lab, Practical, Prac, PR, Workshop, Tutorial, Clinic, Dissection, or similar
-  Otherwise mark as Theory.
-
-TIME FORMAT:
-  Convert all times to 12-hour format with AM/PM.
-  If time shows 08:00 -> 8:00 AM
-  If time shows 14:00 -> 2:00 PM
-  If time shows 9-10 -> 9:00 AM to 10:00 AM
-
-RETURN FORMAT — JSON array only:
-[
-  {
-    "subject": "exactly as written in cell",
-    "type": "Theory or Practical",
-    "startTime": "9:00 AM",
-    "endTime": "10:00 AM",
-    "days": ["Monday"],
-    "room": "room if visible or empty string",
-    "faculty": "faculty if visible or empty",
-    "batch": "batch code or All",
-    "uncertain": false
-  }
-]
-
-CRITICAL RULES:
-1. Only extract what you SEE in the image
-2. Never add subjects from memory or prior knowledge
-3. Never add Siddhant's subjects or any specific student's subjects
-4. If you cannot read a cell clearly, set uncertain: true for that entry
-5. Return empty array [] if the image is not a timetable at all
-6. Return ONLY the JSON array. No markdown, no explanation, no text. Just the raw JSON starting with [`;
-
-export async function POST(req: NextRequest) {
+function parseGeminiJSON(text: string) {
   try {
-    // 1. Verify User Session
-    const { uid, error, status } = await validateToken(req);
-    if (error || !uid) return NextResponse.json({ error }, { status: status || 401 });
-
-    const limiter = checkRateLimit(uid, 5, 3600);
-    if (!limiter.allowed) {
-      return NextResponse.json({ error: 'Too many requests. Please wait before trying again.' }, { status: 429 });
+    let cleaned = text.replace(/```json/gi, '').replace(/```/gi, '').trim()
+    
+    // Find JSON array boundaries
+    const start = cleaned.indexOf('[')
+    const end = cleaned.lastIndexOf(']')
+    
+    if (start === -1 || end === -1) {
+      console.error('No JSON array found in response')
+      return null
     }
-
-    // 2. Parse Request
-    const { base64str } = await req.json();
-    if (!base64str) return NextResponse.json({ error: "Missing image data" }, { status: 400 });
-
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
-    // --- PASS 1 ---
-    let pass1Result: any[] | null = null;
-    try {
-      const result1 = await model.generateContent([
-        SYSTEM_PROMPT,
-        { inlineData: { data: base64str, mimeType: "image/png" } }
-      ]);
-      const raw1 = result1.response.text();
-      pass1Result = safeParseGeminiJSON(raw1);
-    } catch (e: any) {
-      console.error('Pass 1 Gemini call failed:', e.message);
+    
+    const jsonStr = cleaned.slice(start, end+1)
+    const parsed = JSON.parse(jsonStr)
+    
+    if (!Array.isArray(parsed)) {
+      console.error('Not an array')
+      return null
     }
-
-    // --- PASS 2 (Verification) ---
-    let pass2Result: any[] | null = null;
-    if (pass1Result && pass1Result.length > 0) {
-      try {
-        const stage2Prompt = `Here is a timetable image and what was extracted from it in a first pass:
-${JSON.stringify(pass1Result)}
-
-Look at the image again carefully and check:
-1. Are there any classes that were missed?
-2. Are any days wrong?
-3. Are any times wrong?
-4. Were any RECESS/BREAK cells included that should be removed?
-5. Are there subjects from a specific student's timetable that were invented and are not actually in this image? Remove any that are not in the image.
-
-Return the corrected complete JSON array. Only return JSON. No text.`;
-
-        const result2 = await model.generateContent([
-          stage2Prompt,
-          { inlineData: { data: base64str, mimeType: "image/png" } }
-        ]);
-        const raw2 = result2.response.text();
-        pass2Result = safeParseGeminiJSON(raw2);
-      } catch (e: any) {
-        console.error('Pass 2 Gemini call failed:', e.message);
-      }
-    }
-
-    // --- Determine final result ---
-    let classes: any[] = [];
-    let usedFallback = false;
-
-    if (pass2Result && pass2Result.length > 0) {
-      classes = pass2Result;
-    } else if (pass1Result && pass1Result.length > 0) {
-      classes = pass1Result;
-    }
-
-    // Post-processing
-    classes = classes.map((c: any) => ({
-      ...c,
-      batch: c.batch || 'All',
-      room: c.room || '',
-      faculty: c.faculty || '',
-      uncertain: c.uncertain !== undefined ? c.uncertain : false
-    }));
-
-    return NextResponse.json({ classes, usedFallback });
-
-  } catch (error: any) {
-    console.error('Extraction Error:', error);
-    // Explicitly return an empty array if completely failed 
-    // so the frontend triggers the Manual Entry form.
-    return NextResponse.json({ 
-      classes: [], 
-      usedFallback: false 
-    });
+    
+    // Filter out invalid entries
+    return parsed.filter((cls: any) => 
+      cls.subject && cls.subject.trim().length > 0 &&
+      cls.startTime && cls.startTime.trim().length > 0
+    )
+    
+  } catch (e: any) {
+    console.error('JSON parse error:', e.message)
+    console.error('Failed text:', text.substring(0, 200))
+    return null
   }
 }

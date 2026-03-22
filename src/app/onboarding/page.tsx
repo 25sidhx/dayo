@@ -112,27 +112,46 @@ export default function OnboardingWizard() {
   }, [user, authLoading, router]);
 
   // -- Image Preprocessing Logic --
-  const processImageFile = async (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
-        let targetWidth = img.width;
-        let targetHeight = img.height;
-        if (targetWidth < 1200) {
-          const ratio = 1200 / targetWidth;
-          targetWidth = 1200;
-          targetHeight = img.height * ratio;
-        }
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-        const base64 = canvas.toDataURL('image/png', 1.0).split(',')[1];
-        resolve(base64);
-        URL.revokeObjectURL(img.src);
+  const prepareImageForAPI = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const rawBase64 = e.target?.result as string;
+        console.log('File read, type:', file.type);
+        console.log('Raw base64 length:', rawBase64?.length || 0);
+
+        const img = new Image();
+        img.onload = () => {
+          console.log('Image dimensions:', img.width, 'x', img.height);
+          const canvas = document.createElement('canvas');
+          let w = img.width;
+          let h = img.height;
+          if (w > 1200) {
+            h = Math.round(h * 1200 / w);
+            w = 1200;
+          }
+          canvas.width = w;
+          canvas.height = h;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas failed'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, w, h);
+          
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const base64Only = dataUrl.split(',')[1];
+          
+          console.log('Compressed base64 length:', base64Only?.length || 0);
+          console.log('First 50 chars:', base64Only?.substring(0, 50));
+          resolve(base64Only);
+        };
+        img.onerror = () => reject(new Error('Image load failed'));
+        img.src = rawBase64;
       };
-      img.src = URL.createObjectURL(file);
+      reader.onerror = () => reject(new Error('File read failed'));
+      reader.readAsDataURL(file);
     });
   };
 
@@ -191,7 +210,7 @@ export default function OnboardingWizard() {
       if (selectedFile.type === 'application/pdf') {
         base64 = await processPdfFile(selectedFile);
       } else {
-        base64 = await processImageFile(selectedFile);
+        base64 = await prepareImageForAPI(selectedFile);
       }
       
       // --- Storage Upload (Background) ---
