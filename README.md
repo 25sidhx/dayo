@@ -4,7 +4,7 @@
 
 ## 🚀 Live
 
-**[dayo.vercel.app](https://dayo.vercel.app)**
+**[dayo-seven.vercel.app](https://dayo-seven.vercel.app)**
 
 ## ✨ Features
 

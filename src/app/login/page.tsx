@@ -139,14 +139,11 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen grid grid-cols-1 md:grid-cols-2 bg-[#0F0F1A] text-[#FAFAF8] font-sans">
-      <div id="recaptcha-container"></div>
+    <div className="min-h-screen grid grid-cols-1 md:grid-cols-2 bg-[#0F0F1A] text-[#FAFAF8] font-sans relative">
+      <div id="recaptcha-container" className="absolute top-0 left-0"></div>
       
       {/* LEFT — Brand panel */}
       <div className="hidden md:flex flex-col justify-between p-12 border-r border-[#1A1A2E] relative overflow-hidden bg-[#0F0F1A]">
-        <div className="absolute -bottom-10 -left-6 text-[400px] font-black text-white/5 leading-none select-none pointer-events-none">
-          D
-        </div>
 
         <Link href="/" className="flex items-center gap-3 relative z-10">
           <div className="w-10 h-10 bg-[#6366F1] flex items-center justify-center rounded-xl shadow-lg">
