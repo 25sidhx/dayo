@@ -1,8 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest } from 'next/server'
 import { adminAuth } from '@/lib/firebase/firebaseAdmin'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+import { executeVisionWithFallback } from '@/lib/aiProvider'
 
 export async function POST(req: NextRequest) {
   
@@ -34,22 +33,7 @@ export async function POST(req: NextRequest) {
     // Clean base64 — remove prefix if present
     const cleanBase64 = image.includes(',') ? image.split(',')[1] : image
     
-    console.log('CHECKPOINT 4: Calling Gemini 2.0 Flash...')
-    
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 8192,
-      }
-    })
-    
-    const imagePart = {
-      inlineData: {
-        mimeType: 'image/jpeg' as const,
-        data: cleanBase64
-      }
-    }
+    console.log('CHECKPOINT 4: Calling Multi-Tier AI Provider...')
     
     const extractionPrompt = `You are reading a college timetable image.
 Extract every class and return as JSON.
@@ -84,46 +68,50 @@ Return ONLY a JSON array, nothing else. No markdown. No explanation. Just JSON.
     
     let classes = null
     let passCount = 0
+    let tierLevel = 1
+    let usedModel = 'unknown'
     
     // PASS 1
     try {
-      const result1 = await model.generateContent([extractionPrompt, imagePart])
-      const text1 = result1.response.text()
+      const result1 = await executeVisionWithFallback(extractionPrompt, cleanBase64)
+      const text1 = result1.text
+      tierLevel = result1.tierLevel
+      usedModel = result1.usedModel
       
-      console.log('CHECKPOINT 5: Gemini responded, length:', text1.length)
+      console.log('CHECKPOINT 5: AI responded, length:', text1.length)
       console.log('CHECKPOINT 6: First 300 chars:', text1.substring(0, 300))
       
       classes = parseGeminiJSON(text1)
       passCount = 1
       
-      console.log('CHECKPOINT 7: Pass 1 extracted:', classes?.length || 0, 'classes')
+      console.log('CHECKPOINT 7: Pass 1 extracted:', classes?.length || 0, 'classes using', usedModel)
         
     } catch (e: any) {
-      console.error('Pass 1 failed:', e.message)
+      console.error('Pass 1 completely failed (all tiers exhausted):', e.message)
     }
     
     // PASS 2 — only if pass 1 got < 3 classes
     if (!classes || classes.length < 3) {
-      console.log('Running pass 2...')
+      console.log('Running pass 2 on Multi-Tier...')
       try {
-        const result2 = await model.generateContent([
-            extractionPrompt + 
-            '\n\nThe previous attempt found ' + (classes?.length || 0) + 
-            ' classes which seems too few. Please look more carefully at every cell in every row.',
-            imagePart
-          ])
-        const text2 = result2.response.text()
+        const result2 = await executeVisionWithFallback(
+          extractionPrompt + '\n\nThe previous attempt found ' + (classes?.length || 0) + ' classes which seems too few. Please look more carefully at every cell in every row.', 
+          cleanBase64
+        )
+        const text2 = result2.text
         const classes2 = parseGeminiJSON(text2)
         
         if (classes2 && classes2.length > (classes?.length || 0)) {
           classes = classes2
           passCount = 2
+          tierLevel = Math.max(tierLevel, result2.tierLevel)
+          usedModel = result2.usedModel
         }
         
-        console.log('Pass 2 got:', classes2?.length || 0, 'classes')
+        console.log('Pass 2 got:', classes2?.length || 0, 'classes via', usedModel)
           
       } catch (e: any) {
-        console.error('Pass 2 failed:', e.message)
+        console.error('Pass 2 completely failed:', e.message)
       }
     }
     
@@ -155,9 +143,10 @@ Return ONLY a JSON array, nothing else. No markdown. No explanation. Just JSON.
     
     return Response.json({
       classes: unique,
-      source: 'gemini',
+      source: usedModel,
       count: unique.length,
-      passes: passCount
+      passes: passCount,
+      tier: tierLevel
     })
     
   } catch (error: any) {

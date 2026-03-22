@@ -246,7 +246,13 @@ export default function OnboardingWizard() {
       if (pass1Timer) clearTimeout(pass1Timer);
       setRawClasses(data.classes);
       if (data.usedFallback) setUsedFallback(true);
-      toast.dismiss(toastId);
+      
+      if (data.tier && data.tier > 1) {
+        toast.success(`Extraction succeeded via Smart Fallback (Tier ${data.tier})`, { id: toastId, duration: 5000 });
+      } else {
+        toast.dismiss(toastId);
+      }
+      
       setUploadState('complete');
 
       // Detect Batches

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/firebase/auth';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+import { executeTextWithFallback } from '@/lib/aiProvider';
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,8 +9,6 @@ export async function POST(req: NextRequest) {
 
     const { classes, correction } = await req.json();
     if (!classes || !correction) return NextResponse.json({ error: "Missing data" }, { status: 400 });
-
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
     const prompt = `You are a strict data correction system for an Indian engineering college scheduled application.
 
@@ -30,8 +26,8 @@ YOUR INSTRUCTIONS:
 
 Return ONLY the updated valid JSON array. No markdown, no conversational text, no explanations.`;
 
-    const result = await model.generateContent([prompt]);
-    const text = result.response.text();
+    const result = await executeTextWithFallback(prompt);
+    const text = result.text;
     const cleanedJson = text.replace(/```json|```/gi, '').trim();
     
     const correctedClasses = JSON.parse(cleanedJson);
