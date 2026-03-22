@@ -1,29 +1,17 @@
-// Simple in-memory rate limiting for Next.js API Routes
-// Note: In serverless (Vercel), this memory resets per cold start.
-// Good enough for MVP abuse protection.
-
-const cache = new Map<string, number[]>();
-
-export function rateLimit(userId: string, action: string, limit: number, windowSeconds: number): { success: boolean, remaining: number } {
-  const key = `${userId}:${action}`;
-  const now = Date.now();
-  const windowMs = windowSeconds * 1000;
+const map = new Map<string, number[]>()
   
-  if (!cache.has(key)) {
-    cache.set(key, []);
+export function checkRateLimit(
+  userId: string,
+  max: number,
+  windowSecs: number
+) {
+  const now = Date.now()
+  const window = windowSecs * 1000
+  const reqs = (map.get(userId) || [])
+    .filter(t => now - t < window)
+  if (reqs.length >= max) {
+    return { allowed: false }
   }
-
-  const timestamps = cache.get(key)!;
-  // Filter out expired entries
-  const activeTimestamps = timestamps.filter(t => now - t < windowMs);
-  
-  if (activeTimestamps.length >= limit) {
-    cache.set(key, activeTimestamps); // update cache
-    return { success: false, remaining: 0 };
-  }
-
-  activeTimestamps.push(now);
-  cache.set(key, activeTimestamps);
-
-  return { success: true, remaining: limit - activeTimestamps.length };
+  map.set(userId, [...reqs, now])
+  return { allowed: true }
 }

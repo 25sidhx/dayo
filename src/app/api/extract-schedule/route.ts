@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAuthToken } from '@/lib/firebase/auth';
+import { validateToken } from '@/lib/auth/validateToken';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { rateLimit } from '@/lib/rateLimit';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -179,12 +179,12 @@ Each object must have exactly these fields:
 export async function POST(req: NextRequest) {
   try {
     // 1. Verify User Session
-    const { uid, error } = await verifyAuthToken(req);
-    if (!uid) return NextResponse.json({ error }, { status: 401 });
+    const { uid, error, status } = await validateToken(req);
+    if (error || !uid) return NextResponse.json({ error }, { status: status || 401 });
 
-    const limiter = rateLimit(uid, 'extract-schedule', 5, 3600);
-    if (!limiter.success) {
-      return NextResponse.json({ error: "Rate limit exceeded. Max 5 extractions per hour." }, { status: 429 });
+    const limiter = checkRateLimit(uid, 5, 3600);
+    if (!limiter.allowed) {
+      return NextResponse.json({ error: 'Too many requests. Please wait before trying again.' }, { status: 429 });
     }
 
     // 2. Parse Request

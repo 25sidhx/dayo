@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, redirect } from "next/navigation";
 import { Play, RotateCcw, Download, CheckCircle2, AlertTriangle, XCircle, Info } from "lucide-react";
 
 type TestResult = 'PENDING' | 'RUNNING' | 'PASS' | 'FAIL' | 'WARNING' | 'SKIPPED';
+
+if (process.env.NODE_ENV !== 'development') {
+  redirect('/dashboard');
+}
 
 export interface TestCase {
   id: string;

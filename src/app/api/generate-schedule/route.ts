@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAuthToken } from '@/lib/firebase/auth';
-import { rateLimit } from '@/lib/rateLimit';
+import { validateToken } from '@/lib/auth/validateToken';
+import { checkRateLimit } from '@/lib/rateLimit';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { adminDb } from '@/lib/firebase/firebaseAdmin';
 
@@ -8,13 +8,13 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, error } = await verifyAuthToken(req);
-    if (!uid) return NextResponse.json({ error }, { status: 401 });
+    const { uid, error, status } = await validateToken(req);
+    if (error || !uid) return NextResponse.json({ error }, { status: status || 401 });
 
     // Rate Limiting: Max 3 schedule generations per user per day
-    const limiter = rateLimit(uid, 'generate-schedule', 3, 86400);
-    if (!limiter.success) {
-      return NextResponse.json({ error: "Rate limit exceeded. Max 3 schedules per day." }, { status: 429 });
+    const limiter = checkRateLimit(uid, 3, 86400);
+    if (!limiter.allowed) {
+      return NextResponse.json({ error: 'Too many requests. Please wait before trying again.' }, { status: 429 });
     }
 
     const { classes, preferences } = await req.json();

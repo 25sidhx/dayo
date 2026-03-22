@@ -339,16 +339,19 @@ export default function Login() {
         )}
 
         {/* Footer Links */}
-        {mode === 'login' && (
-          <div className="text-center mt-2">
+        <div className="text-center mt-6 flex flex-col gap-3">
+          {mode === 'login' && (
             <button
               onClick={() => { setMode('forgot'); setError(null); setResetSent(false); }}
               className="text-[#9CA3AF] text-[13px] hover:text-white transition-colors underline"
             >
               Forgot password?
             </button>
-          </div>
-        )}
+          )}
+          <Link href="/privacy" className="text-white/40 text-[11px] hover:text-white transition-colors underline">
+            Privacy Policy
+          </Link>
+        </div>
       </div>
     </div>
   );

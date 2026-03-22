@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAuthToken } from "@/lib/firebase/auth";
+import { validateToken } from "@/lib/auth/validateToken";
 import { adminDb } from "@/lib/firebase/firebaseAdmin";
 
 function generateCode() {
@@ -13,8 +13,8 @@ function generateCode() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, error } = await verifyAuthToken(req);
-    if (!uid) return NextResponse.json({ error }, { status: 401 });
+    const { uid, error, status } = await validateToken(req);
+    if (error || !uid) return NextResponse.json({ error }, { status: status || 401 });
 
     const { name } = await req.json().catch(() => ({ name: 'My Batch' }));
 
