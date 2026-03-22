@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #FAFAF8;
+  --color-on-surface: #1A1A2E;
+  --color-primary: #6366F1;
+
+  /* Intelly Token System */
+  --color-sidebar: #0F0F1A;
+  --color-meal: #FDA4AF;
+  --color-study: #FCD34D;
+  --color-travel: #86EFAC;
+  --color-stat-yellow: #F5E642;
+  --color-stat-pink: #F5A8C8;
+  --color-stat-sage: #A8D4B0;
+  
+  --color-attendance-safe: #22C55E;
+  --color-attendance-warn: #F59E0B;
+  --color-attendance-danger: #EF4444;
+
+  --font-sans: var(--font-sans), 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-heading), 'DM Serif Display', ui-serif, serif;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    background: #E5E0D5;
+    color: var(--color-on-surface);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  /* Intelly Design Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #D1D5DB;
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
+  
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
