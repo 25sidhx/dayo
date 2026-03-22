@@ -47,134 +47,79 @@ function safeParseGeminiJSON(raw: string): any[] | null {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// FIX 3 — HARDCODED GROUND TRUTH FALLBACK
+// UNIVERSAL TIMETABLE PARSER PROMPT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const FALLBACK_TIMETABLE = [
-  // MONDAY
-  { subject: 'Microcontroller and Applications', abbreviation: 'MAA', type: 'Theory', startTime: '12:10 PM', endTime: '1:05 PM', days: ['Monday'], room: '', faculty: 'Ms. Priyanka Chopkar', batch: 'All' },
-  { subject: 'Aptitude and Employability Skill', abbreviation: 'AES', type: 'Theory', startTime: '1:05 PM', endTime: '2:00 PM', days: ['Monday'], room: '', faculty: 'Mr. Chaitra Dhote', batch: 'All' },
-  { subject: 'Microcontroller and Applications', abbreviation: 'MAA', type: 'Practical', startTime: '2:20 PM', endTime: '4:10 PM', days: ['Monday'], room: '302', faculty: 'Ms. Priyanka Chopkar', batch: 'B2' },
-  { subject: 'Skill Enhancement Elective III', abbreviation: 'SEE-III-IR', type: 'Practical', startTime: '2:20 PM', endTime: '4:10 PM', days: ['Monday'], room: '305', faculty: 'Mr. Ashish Katore', batch: 'B3' },
-  { subject: 'Analog Integrated Circuits', abbreviation: 'AIC', type: 'Practical', startTime: '2:20 PM', endTime: '4:10 PM', days: ['Monday'], room: '306', faculty: 'PYC', batch: 'B1' },
-  { subject: 'Sports', abbreviation: 'SPORTS', type: 'Theory', startTime: '2:20 PM', endTime: '4:10 PM', days: ['Monday'], room: '', faculty: '', batch: 'B4' },
-  { subject: 'Library', abbreviation: 'LIBRARY', type: 'Theory', startTime: '4:15 PM', endTime: '5:10 PM', days: ['Monday'], room: '', faculty: '', batch: 'All' },
-
-  // TUESDAY
-  { subject: 'Universal Human Values 2', abbreviation: 'UHV2', type: 'Theory', startTime: '12:10 PM', endTime: '1:05 PM', days: ['Tuesday'], room: '', faculty: 'Ms. Prajakta Upadhye', batch: 'All' },
-  { subject: 'Analog Integrated Circuits', abbreviation: 'AIC', type: 'Theory', startTime: '1:05 PM', endTime: '2:00 PM', days: ['Tuesday'], room: '', faculty: 'Dr. Swati Dixit', batch: 'All' },
-  { subject: 'Multidisciplinary Minor 2', abbreviation: 'MDM2', type: 'Theory', startTime: '2:20 PM', endTime: '3:15 PM', days: ['Tuesday'], room: '', faculty: '', batch: 'All' },
-  { subject: 'Open Elective 2', abbreviation: 'OE2', type: 'Theory', startTime: '3:15 PM', endTime: '4:10 PM', days: ['Tuesday'], room: '', faculty: '', batch: 'All' },
-  { subject: 'Aptitude and Employability Skill', abbreviation: 'AES', type: 'Theory', startTime: '4:15 PM', endTime: '5:10 PM', days: ['Tuesday'], room: '', faculty: 'Mr. Chaitra Dhote', batch: 'All' },
-  { subject: 'Sports', abbreviation: 'SPORTS', type: 'Theory', startTime: '5:10 PM', endTime: '6:05 PM', days: ['Tuesday'], room: '', faculty: '', batch: 'All' },
-
-  // WEDNESDAY
-  { subject: 'Microcontroller and Applications', abbreviation: 'MAA', type: 'Practical', startTime: '12:10 PM', endTime: '2:00 PM', days: ['Wednesday'], room: '302', faculty: 'Ms. Priyanka Chopkar', batch: 'B1' },
-  { subject: 'Skill Enhancement Elective III', abbreviation: 'SEE-III-IR', type: 'Practical', startTime: '12:10 PM', endTime: '2:00 PM', days: ['Wednesday'], room: '305', faculty: 'Mr. Ashish Katore', batch: 'B2' },
-  { subject: 'Analog Integrated Circuits', abbreviation: 'AIC', type: 'Practical', startTime: '12:10 PM', endTime: '2:00 PM', days: ['Wednesday'], room: '306', faculty: 'Mr. Vishal Jaiswal', batch: 'B4' },
-  { subject: 'Sports', abbreviation: 'SPORTS', type: 'Theory', startTime: '12:10 PM', endTime: '2:00 PM', days: ['Wednesday'], room: '', faculty: '', batch: 'B3' },
-  { subject: 'Aptitude and Employability Skill', abbreviation: 'AES', type: 'Theory', startTime: '2:20 PM', endTime: '3:15 PM', days: ['Wednesday'], room: '', faculty: 'Mr. Chaitra Dhote', batch: 'All' },
-  { subject: 'Open Elective 2', abbreviation: 'OE2', type: 'Theory', startTime: '3:15 PM', endTime: '4:10 PM', days: ['Wednesday'], room: '', faculty: '', batch: 'All' },
-  { subject: 'Microcontroller and Applications', abbreviation: 'MAA', type: 'Practical', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Wednesday'], room: '302', faculty: 'Ms. Priyanka Chopkar', batch: 'B3' },
-  { subject: 'Skill Enhancement Elective III', abbreviation: 'SEE-III-IR', type: 'Practical', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Wednesday'], room: '305', faculty: 'Mr. Ashish Katore', batch: 'B4' },
-  { subject: 'Analog Integrated Circuits', abbreviation: 'AIC', type: 'Practical', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Wednesday'], room: '306', faculty: 'PYC', batch: 'B2' },
-  { subject: 'Sports', abbreviation: 'SPORTS', type: 'Theory', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Wednesday'], room: '', faculty: '', batch: 'B1' },
-
-  // THURSDAY
-  { subject: 'Skill Enhancement Elective III', abbreviation: 'SEE-III-IR', type: 'Theory', startTime: '12:10 PM', endTime: '1:05 PM', days: ['Thursday'], room: '', faculty: 'Mr. Ashish Katore', batch: 'All' },
-  { subject: 'Microcontroller and Applications', abbreviation: 'MAA', type: 'Theory', startTime: '1:05 PM', endTime: '2:00 PM', days: ['Thursday'], room: '', faculty: 'Ms. Priyanka Chopkar', batch: 'All' },
-  { subject: 'Analog Integrated Circuits', abbreviation: 'AIC', type: 'Theory', startTime: '2:20 PM', endTime: '3:15 PM', days: ['Thursday'], room: '', faculty: 'Dr. Swati Dixit', batch: 'All' },
-  { subject: 'Multidisciplinary Minor 2', abbreviation: 'MDM2', type: 'Theory', startTime: '3:15 PM', endTime: '4:10 PM', days: ['Thursday'], room: '', faculty: '', batch: 'All' },
-  { subject: 'Entrepreneurship Development Practices', abbreviation: 'EDP', type: 'Theory', startTime: '4:15 PM', endTime: '5:10 PM', days: ['Thursday'], room: '', faculty: 'Mr. Dhruvesh Nandanwar', batch: 'All' },
-  { subject: 'Sports', abbreviation: 'SPORTS', type: 'Theory', startTime: '5:10 PM', endTime: '6:05 PM', days: ['Thursday'], room: '', faculty: '', batch: 'All' },
-
-  // FRIDAY
-  { subject: 'Analog Integrated Circuits', abbreviation: 'AIC', type: 'Theory', startTime: '12:10 PM', endTime: '1:05 PM', days: ['Friday'], room: '', faculty: 'Dr. Swati Dixit', batch: 'All' },
-  { subject: 'Entrepreneurship Development Practices', abbreviation: 'EDP', type: 'Theory', startTime: '1:05 PM', endTime: '2:00 PM', days: ['Friday'], room: '', faculty: 'Mr. Dhruvesh Nandanwar', batch: 'All' },
-  { subject: 'Microcontroller and Applications', abbreviation: 'MAA', type: 'Theory', startTime: '2:20 PM', endTime: '3:15 PM', days: ['Friday'], room: '', faculty: 'Ms. Priyanka Chopkar', batch: 'All' },
-  { subject: 'Universal Human Values 2', abbreviation: 'UHV2', type: 'Theory', startTime: '3:15 PM', endTime: '4:10 PM', days: ['Friday'], room: '', faculty: 'Ms. Prajakta Upadhye', batch: 'All' },
-  { subject: 'Microcontroller and Applications', abbreviation: 'MAA', type: 'Practical', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Friday'], room: '302', faculty: 'Ms. Priyanka Chopkar', batch: 'B4' },
-  { subject: 'Skill Enhancement Elective III', abbreviation: 'SEE-III-IR', type: 'Practical', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Friday'], room: '305', faculty: 'Mr. Ashish Katore', batch: 'B1' },
-  { subject: 'Analog Integrated Circuits', abbreviation: 'AIC', type: 'Practical', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Friday'], room: '306', faculty: 'Ms. Prajakta Upadhye', batch: 'B3' },
-  { subject: 'Sports', abbreviation: 'SPORTS', type: 'Theory', startTime: '4:15 PM', endTime: '6:05 PM', days: ['Friday'], room: '', faculty: '', batch: 'B2' },
-];
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FIX 2 — NEW GEMINI PROMPT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SYSTEM_PROMPT = `You are a timetable parser for Indian engineering colleges. Extract every class from this timetable image as a JSON array.
+const SYSTEM_PROMPT = `You are an expert at reading college timetable images from any Indian university, college, or institution. You can read timetables from engineering, medical, arts, commerce, law, pharmacy, nursing, architecture, or any other field.
 
-THIS SPECIFIC TIMETABLE STRUCTURE:
-- Classroom: B-3-03, SEM-IV Even Semester
-- Time slots run across the top as columns:
-  12:10-1:05, 1:05-2:00, 2:20-3:15, 3:15-4:10, 4:15-5:10, 5:10-6:05
-- The columns 2:00-2:20 and 4:10-4:15 say RECESS — skip these completely
-- Days run down as rows: MON, TUE, WED, THU, FRI, SAT
-- SAT has no classes — all dashes
+YOUR ONLY JOB: Extract what you actually see in this image. Do not assume, do not guess, do not use any prior knowledge about subjects. Read ONLY what is written in the cells of this timetable.
 
-SUBJECT ABBREVIATION KEY:
-MAA = Microcontroller and Applications
-AIC = Analog Integrated Circuits
-UHV2 = Universal Human Values 2
-SEE-III-IR = Skill Enhancement Elective III Introduction to Robotics
-AES = Aptitude and Employability Skill
-EDP = Entrepreneurship Development Practices
-MDM2 = Multidisciplinary Minor 2
-OE2 = Open Elective 2
-LIBRARY = Library
-SPORTS = Sports
+UNIVERSAL RULES FOR READING ANY TIMETABLE:
 
-BATCH CODES:
-B1 = Roll numbers 1-23
-B2 = Roll numbers 24-47
-B3 = Roll numbers 48-70
-B4 = Roll numbers P1-P25
+STRUCTURE — Most Indian college timetables follow one of these layouts:
+  Layout A: Days as ROWS, Times as COLUMNS (rows say MON/TUE/WED or Monday etc)
+  Layout B: Times as ROWS, Days as COLUMNS (top row has day names)
+  Layout C: Day-wise tables, one per day
 
-HOW TO READ BATCH SPLIT CELLS:
-Some cells have multiple subjects separated by / with batch codes like this:
-MAA (B2/302) (PC) / SEE-III-IR (B3/305) (AK) / AIC (B1/306) (PYC) / SPORTS (B4)
-This means:
-  Batch B2 has MAA in room 302 with faculty PC
-  Batch B3 has SEE-III-IR in room 305 with faculty AK
-  Batch B1 has AIC in room 306 with faculty PYC
-  Batch B4 has SPORTS
-Create a SEPARATE JSON entry for EACH batch.
+Detect which layout this timetable uses before extracting anything.
 
-FACULTY INITIALS KEY:
-PC = Ms. Priyanka Chopkar
-CD = Mr. Chaitra Dhote
-PU = Ms. Prajakta Upadhye
-SD = Dr. Swati Dixit
-AK = Mr. Ashish Katore
-DN = Mr. Dhruvesh Nandanwar
-PYC = PYC faculty
-VJ = Mr. Vishal Jaiswal
+READING EACH CELL:
+  Take EXACTLY what is written in the cell as the subject name.
+  Do not expand abbreviations unless a legend/key is visible in the same image.
+  If a legend is visible, use it to expand.
+  If no legend is visible, use the abbreviation exactly as written.
 
-RULES:
-1. Skip ALL RECESS columns entirely
-2. Skip SAT row entirely — no classes
-3. A dash in a cell means no class — skip it
-4. Convert times to 12-hour AM/PM format
-5. If a cell has batch split with / separator, create one entry per batch
-6. Use full subject names from the key above
-7. Mark as Practical if subject name contains LAB, PRACTICAL, or is a practical batch session (batch-split cells are Practical)
-8. Merged cells that span 2:20-4:10 mean the class runs from 2:20 PM to 4:10 PM
+  Example: if cell says 'DBMS' — subject is 'DBMS' not 'Database Management Systems' (unless legend shows expansion)
+  Example: if cell says 'Anatomy' — subject is 'Anatomy'
+  Example: if cell says 'Contract Law' — subject is 'Contract Law'
 
-RETURN FORMAT:
-Return ONLY a valid JSON array. No markdown. No code blocks. No explanation.
-Just the raw JSON array starting with [
+SKIP THESE COMPLETELY:
+  Any cell that says RECESS or BREAK
+  Any cell that says LUNCH
+  Any cell that says FREE or LIBRARY unless clearly a scheduled class
+  Any cell with only a dash - or empty
+  Header row with day names
+  Header column with time labels
 
-Each object must have exactly these fields:
-{
-  "subject": "Full subject name",
-  "abbreviation": "MAA",
-  "type": "Theory or Practical",
-  "startTime": "12:10 PM",
-  "endTime": "1:05 PM",
-  "days": ["Monday"],
-  "room": "302 or empty string",
-  "faculty": "Ms. Priyanka Chopkar",
-  "batch": "B1 or B2 or B3 or B4 or All"
-}`;
+BATCH SPLITS:
+  If a cell contains multiple subjects separated by / or | with group codes, create a separate entry for each group.
+  Group codes can be: A/B, Batch1/Batch2, Div A/Div B, Gr1/Gr2, or any other format.
+
+TYPE DETECTION:
+  Mark as Practical if subject name contains: Lab, Practical, Prac, PR, Workshop, Tutorial, Clinic, Dissection, or similar
+  Otherwise mark as Theory.
+
+TIME FORMAT:
+  Convert all times to 12-hour format with AM/PM.
+  If time shows 08:00 -> 8:00 AM
+  If time shows 14:00 -> 2:00 PM
+  If time shows 9-10 -> 9:00 AM to 10:00 AM
+
+RETURN FORMAT — JSON array only:
+[
+  {
+    "subject": "exactly as written in cell",
+    "type": "Theory or Practical",
+    "startTime": "9:00 AM",
+    "endTime": "10:00 AM",
+    "days": ["Monday"],
+    "room": "room if visible or empty string",
+    "faculty": "faculty if visible or empty",
+    "batch": "batch code or All",
+    "uncertain": false
+  }
+]
+
+CRITICAL RULES:
+1. Only extract what you SEE in the image
+2. Never add subjects from memory or prior knowledge
+3. Never add Siddhant's subjects or any specific student's subjects
+4. If you cannot read a cell clearly, set uncertain: true for that entry
+5. Return empty array [] if the image is not a timetable at all
+6. Return ONLY the JSON array. No markdown, no explanation, no text. Just the raw JSON starting with [`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -210,17 +155,17 @@ export async function POST(req: NextRequest) {
     let pass2Result: any[] | null = null;
     if (pass1Result && pass1Result.length > 0) {
       try {
-        const stage2Prompt = `Here is a timetable image and here is what was extracted from it in a first pass:
+        const stage2Prompt = `Here is a timetable image and what was extracted from it in a first pass:
 ${JSON.stringify(pass1Result)}
 
-Please verify this extraction is correct by checking the original image again. Look for:
-1. Any classes that were missed
-2. Any wrong day assignments (common mistake)
-3. Any wrong times
-4. Any RECESS entries that slipped through
-5. Any batch codes that were missed
+Look at the image again carefully and check:
+1. Are there any classes that were missed?
+2. Are any days wrong?
+3. Are any times wrong?
+4. Were any RECESS/BREAK cells included that should be removed?
+5. Are there subjects from a specific student's timetable that were invented and are not actually in this image? Remove any that are not in the image.
 
-Return the corrected and complete JSON array in the exact same format. Return ONLY the raw JSON array starting with [. No markdown.`;
+Return the corrected complete JSON array. Only return JSON. No text.`;
 
         const result2 = await model.generateContent([
           stage2Prompt,
@@ -241,9 +186,6 @@ Return the corrected and complete JSON array in the exact same format. Return ON
       classes = pass2Result;
     } else if (pass1Result && pass1Result.length > 0) {
       classes = pass1Result;
-    } else {
-      classes = FALLBACK_TIMETABLE;
-      usedFallback = true;
     }
 
     // Post-processing
@@ -251,17 +193,19 @@ Return the corrected and complete JSON array in the exact same format. Return ON
       ...c,
       batch: c.batch || 'All',
       room: c.room || '',
-      faculty: c.faculty || ''
+      faculty: c.faculty || '',
+      uncertain: c.uncertain !== undefined ? c.uncertain : false
     }));
 
     return NextResponse.json({ classes, usedFallback });
 
   } catch (error: any) {
     console.error('Extraction Error:', error);
-    // Even on total crash, return fallback
+    // Explicitly return an empty array if completely failed 
+    // so the frontend triggers the Manual Entry form.
     return NextResponse.json({ 
-      classes: FALLBACK_TIMETABLE, 
-      usedFallback: true 
+      classes: [], 
+      usedFallback: false 
     });
   }
 }

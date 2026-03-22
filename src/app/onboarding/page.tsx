@@ -59,6 +59,7 @@ export default function OnboardingWizard() {
   const [activeDay, setActiveDay] = useState('MONDAY');
   const [correctionText, setCorrectionText] = useState("");
   const [isCorrecting, setIsCorrecting] = useState(false);
+  const [manualForm, setManualForm] = useState({ subject: '', type: 'Theory', startTime: '09:00', endTime: '10:00', days: ['MONDAY'] as string[], room: '', faculty: '' });
 
   // Install Prompt State
   const [showIOSInstall, setShowIOSInstall] = useState(false);
@@ -538,19 +539,14 @@ export default function OnboardingWizard() {
                <p className="text-[14px] text-[#9CA3AF] mb-12 text-center">We noticed multiple groups inside your timetable. Your practical labs differ by batch.</p>
                
                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-                  {[
-                    { id: 'B1', desc: 'Roll numbers 1–23' },
-                    { id: 'B2', desc: 'Roll numbers 24–47' },
-                    { id: 'B3', desc: 'Roll numbers 48–70' },
-                    { id: 'B4', desc: 'Roll numbers P1–P25' },
-                  ].filter(item => availableBatches.includes(item.id)).map(item => (
+                  {availableBatches.map(batchCode => (
                      <button 
-                       key={item.id}
-                       onClick={() => handleBatchSelection(item.id)}
+                       key={batchCode}
+                       onClick={() => handleBatchSelection(batchCode)}
                        className="aspect-square bg-white border-2 border-[#E5E7EB] hover:border-[#6366F1] hover:bg-[#EEF2FF] rounded-[24px] flex flex-col items-center justify-center transition-all group shadow-sm hover:shadow-md p-4"
                      >
-                       <span className="text-[48px] font-heading text-[#1A1A2E] group-hover:text-[#6366F1] transition-colors">{item.id}</span>
-                       <span className="text-[11px] text-[#9CA3AF] font-medium mt-2 group-hover:text-[#6366F1]/70 transition-colors">{item.desc}</span>
+                       <span className="text-[48px] font-heading text-[#1A1A2E] group-hover:text-[#6366F1] transition-colors line-clamp-1 break-all w-full text-center px-2">{batchCode}</span>
+                       <span className="text-[11px] text-[#9CA3AF] font-medium mt-2 group-hover:text-[#6366F1]/70 transition-colors uppercase tracking-widest bg-[#F9FAFB] px-3 py-1 rounded-full">Select Group</span>
                      </button>
                   ))}
                </div>
@@ -559,24 +555,78 @@ export default function OnboardingWizard() {
 
           {step === 'verify' && (
             <div className="w-full max-w-4xl flex flex-col items-center animate-in fade-in duration-700 pb-16">
-              <h2 className="font-heading text-[32px] text-[#1A1A2E] leading-tight mb-2 text-center">{name.split(' ')[0] || 'Hey'}, we found {classes.length} classes!</h2>
-              <p className="text-[14px] text-[#9CA3AF] mb-4 text-center">Does this look right? You can edit properties or add missing entries manually.</p>
+              {classes.length === 0 ? (
+                <>
+                  <h2 className="font-heading text-[32px] text-[#1A1A2E] leading-tight mb-2 text-center">Let&apos;s add your classes manually</h2>
+                  <p className="text-[14px] text-[#9CA3AF] mb-8 text-center">Our AI couldn&apos;t read your timetable. Add your classes one by one.</p>
+                </>
+              ) : (
+                <>
+                  <h2 className="font-heading text-[32px] text-[#1A1A2E] leading-tight mb-2 text-center">{name.split(' ')[0] || 'Hey'}, we found {classes.length} classes!</h2>
+                  <p className="text-[14px] text-[#9CA3AF] mb-4 text-center">Does this look right? You can edit properties or add missing entries manually.</p>
+                </>
+              )}
 
-               {usedFallback && (
-                 <div className="w-full max-w-2xl mb-6 p-4 bg-[#FEF3C7] border border-[#F59E0B]/30 rounded-[16px] flex items-start gap-3">
-                   <span className="text-xl">⚠️</span>
-                   <p className="text-[13px] text-[#92400E] font-medium">We used a pre-loaded timetable because AI extraction returned incomplete data. Please verify and correct any mistakes before confirming.</p>
+               {classes.length > 0 && !classes.some(c => c.uncertain) && uploadState === 'complete' && (
+                 <div className="w-full max-w-2xl mb-6 p-4 bg-[#ECFDF5] border border-[#10B981]/30 rounded-[16px] flex items-start gap-3">
+                   <span className="text-xl">✅</span>
+                   <p className="text-[13px] text-[#065F46] font-medium">AI successfully read your timetable! Please verify below.</p>
                  </div>
                )}
 
-              <button 
-                onClick={() => {
-                   setClasses([{ subject: "New Subject", type: "Theory", startTime: "09:00 AM", endTime: "10:00 AM", days: [activeDay], room: "" }, ...classes]);
-                }}
-                className="mb-8 w-full max-w-md bg-[#6366F1] hover:bg-[#4F46E5] text-white py-3 rounded-[14px] text-[14px] font-semibold shadow-lg transition-all flex items-center justify-center gap-2"
-              >
-                <span>+ Add Class Manually</span>
-              </button>
+               {classes.length > 0 && classes.some(c => c.uncertain) && uploadState === 'complete' && (
+                 <div className="w-full max-w-2xl mb-6 p-4 bg-[#FEF3C7] border border-[#F59E0B]/30 rounded-[16px] flex items-start gap-3">
+                   <span className="text-xl">⚠️</span>
+                   <p className="text-[13px] text-[#92400E] font-medium">Some entries were unclear — highlighted in orange. Please check them.</p>
+                 </div>
+               )}
+
+              <div className="w-full max-w-2xl bg-white p-6 rounded-[20px] shadow-sm border border-[#E5E7EB] mb-10">
+                <h3 className="font-bold text-[#1A1A2E] mb-4">Add Class</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input type="text" placeholder="Subject Name" value={manualForm.subject} onChange={e => setManualForm({...manualForm, subject: e.target.value})} className="col-span-1 md:col-span-2 w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
+                  
+                  <div className="flex bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl p-1">
+                    <button onClick={() => setManualForm({...manualForm, type: 'Theory'})} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${manualForm.type === 'Theory' ? 'bg-white shadow-sm text-[#1A1A2E]' : 'text-[#9CA3AF]'}`}>Theory</button>
+                    <button onClick={() => setManualForm({...manualForm, type: 'Practical'})} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${manualForm.type === 'Practical' ? 'bg-white shadow-sm text-[#1A1A2E]' : 'text-[#9CA3AF]'}`}>Practical</button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input type="time" value={manualForm.startTime} onChange={e => setManualForm({...manualForm, startTime: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
+                    <input type="time" value={manualForm.endTime} onChange={e => setManualForm({...manualForm, endTime: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
+                  </div>
+
+                  <div className="col-span-1 md:col-span-2 flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                    {DAYS_OF_WEEK.map(day => (
+                      <button key={day} onClick={() => {
+                        const days = manualForm.days.includes(day) ? manualForm.days.filter(d => d !== day) : [...manualForm.days, day];
+                        setManualForm({...manualForm, days});
+                      }} className={`px-4 py-2 shrink-0 rounded-full border text-xs font-bold transition-all ${manualForm.days.includes(day) ? 'bg-[#6366F1] border-[#6366F1] text-white' : 'bg-[#F9FAFB] border-[#E5E7EB] text-[#6B7280]'}`}>
+                        {day.substring(0,3)}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input type="text" placeholder="Room (Optional)" value={manualForm.room} onChange={e => setManualForm({...manualForm, room: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
+                  <input type="text" placeholder="Faculty (Optional)" value={manualForm.faculty} onChange={e => setManualForm({...manualForm, faculty: e.target.value})} className="w-full h-12 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-4 outline-none focus:border-[#6366F1]" />
+                </div>
+                <button onClick={() => {
+                  if (!manualForm.subject) return toast.error("Subject is required");
+                  if (manualForm.days.length === 0) return toast.error("Select at least one day");
+                  
+                  const formatTime = (time24: string) => {
+                    const [h, m] = time24.split(':').map(Number);
+                    const ampm = h >= 12 ? 'PM' : 'AM';
+                    const h12 = h % 12 || 12;
+                    return `${h12}:${m.toString().padStart(2,'0')} ${ampm}`;
+                  };
+
+                  setClasses([{ ...manualForm, startTime: formatTime(manualForm.startTime), endTime: formatTime(manualForm.endTime), batch: 'All', uncertain: false }, ...classes]);
+                  setManualForm({ subject: '', type: 'Theory', startTime: '09:00', endTime: '10:00', days: ['MONDAY'], room: '', faculty: '' });
+                }} className="w-full mt-4 bg-[#6366F1] hover:bg-[#4F46E5] text-white py-3 rounded-xl font-bold shadow-md transition-all">
+                  + Add Class
+                </button>
+              </div>
 
               {/* Day Filter Slider */}
               <div className="w-full overflow-x-auto custom-scrollbar mb-8 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 flex justify-center">
@@ -624,7 +674,10 @@ export default function OnboardingWizard() {
                      if (origIdx === -1) return null;
 
                      return (
-                      <div key={origIdx} className="bg-white p-4 rounded-[16px] shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-[#E5E7EB] flex items-start gap-4 animate-in zoom-in-95 duration-300">
+                      <div key={origIdx} className={`bg-white p-4 rounded-[16px] shadow-[0_2px_12px_rgba(0,0,0,0.04)] border ${cls.uncertain ? 'border-l-4 border-l-[#F59E0B] border-[#F59E0B]/20' : 'border-[#E5E7EB]'} flex items-start gap-4 animate-in zoom-in-95 duration-300 relative group`}>
+                        <button onClick={() => setClasses(classes.filter((_, i) => i !== origIdx))} className="absolute top-2 right-2 text-[#9CA3AF] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X className="w-4 h-4" />
+                        </button>
                         <div className="w-10 h-10 shrink-0 rounded-[10px] bg-[#EEF2FF] flex items-center justify-center text-[#6366F1]">
                            <BookOpen className="w-5 h-5" />
                         </div>
@@ -703,8 +756,8 @@ export default function OnboardingWizard() {
               </div>
 
               <div className="w-full max-w-md sticky bottom-0 bg-gradient-to-t from-[#FAFAF8] via-[#FAFAF8] to-transparent pt-6 pb-2">
-                <button onClick={() => advanceStep('commute')} className="w-full bg-[#6366F1] hover:bg-[#4F46E5] text-white py-4 rounded-[14px] font-semibold text-[14px] shadow-lg flex items-center justify-center gap-2 transition-colors">
-                  <span>Looks good, build my schedule</span>
+                <button disabled={classes.length === 0} onClick={() => advanceStep('commute')} className="w-full bg-[#6366F1] hover:bg-[#4F46E5] text-white py-4 rounded-[14px] font-semibold text-[14px] shadow-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                  <span>Done — Build My Schedule</span>
                   <ChevronRight className="w-5 h-5" />
                 </button>
               </div>
