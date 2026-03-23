@@ -128,9 +128,9 @@ export default function OnboardingWizard() {
           const canvas = document.createElement('canvas');
           let w = img.width;
           let h = img.height;
-          if (w > 1200) {
-            h = Math.round(h * 1200 / w);
-            w = 1200;
+          if (w > 1800) {
+            h = Math.round(h * 1800 / w);
+            w = 1800;
           }
           canvas.width = w;
           canvas.height = h;
@@ -142,7 +142,7 @@ export default function OnboardingWizard() {
           }
           ctx.drawImage(img, 0, 0, w, h);
           
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
           const base64Only = dataUrl.split(',')[1];
           
           console.log('Compressed base64 length:', base64Only?.length || 0);
@@ -166,8 +166,8 @@ export default function OnboardingWizard() {
     const page = await pdf.getPage(1);
     
     let tempViewport = page.getViewport({ scale: 1.0 });
-    let scale = 2.0;
-    if (tempViewport.width * scale < 1200) scale = 1200 / tempViewport.width;
+    let scale = 3.0; // Higher base scale
+    if (tempViewport.width * scale < 1800) scale = 1800 / tempViewport.width;
     
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
@@ -177,7 +177,7 @@ export default function OnboardingWizard() {
     canvas.height = viewport.height;
     await page.render({ canvasContext: ctx, viewport } as any).promise;
     
-    return canvas.toDataURL('image/png', 1.0).split(',')[1];
+    return canvas.toDataURL('image/jpeg', 0.90).split(',')[1];
   };
 
   // -- API Fetch Logic --

@@ -3,16 +3,16 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // Define the Tiers
 export const AI_TIERS = {
   TIER_1: {
-    id: 'anthropic/claude-3.5-sonnet', // Highest quality, authorized by user
-    provider: 'openrouter',
+    id: 'gemini-2.5-flash',      // Best free vision performance
+    provider: 'gemini',
     type: 'vision',
-    description: 'Ultra-smart primary engine (Claude 3.5 Sonnet)'
+    description: 'Flash Primary Engine (Free)'
   },
   TIER_2: {
-    id: 'gemini-2.5-flash',      // Proven stable workhorse
-    provider: 'gemini',
+    id: 'google/gemma-3-27b-it:free',
+    provider: 'openrouter',
     type: 'vision', 
-    description: 'High free-quota stable fallback'
+    description: 'OpenRouter High-Capacity Fallback (Gemma 3 27B)'
   },
   TIER_3: {
     id: 'google/gemma-3-12b-it:free',
@@ -24,19 +24,19 @@ export const AI_TIERS = {
     id: 'nvidia/nemotron-3-nano-30b-a3b:free',
     provider: 'openrouter',
     type: 'text',
-    description: 'OpenRouter Free Fallback (Nemotron 30B)'
+    description: 'OpenRouter Free Fallback (Text-only 30B)'
   },
   TIER_3C: {
     id: 'stepfun/step-3.5-flash:free',
     provider: 'openrouter',
     type: 'text',
-    description: 'OpenRouter Free Fallback (Step 3.5 Flash)'
+    description: 'OpenRouter Free Fallback (Text-only Flash)'
   },
   TIER_4: {
-    id: 'gemini-2.5-pro',        // Premium reasoning
+    id: 'gemini-2.5-pro',        // Massive reasoning, free up to 50 reqs/day
     provider: 'gemini',
     type: 'vision',
-    description: 'Premium intelligence fallback'
+    description: 'Deep Reasoning Fallback'
   }
 };
 
@@ -138,8 +138,8 @@ export async function executeVisionWithFallback(prompt: string, imageBase64: str
       console.warn(`[AI Provider] Error with ${tier.id}:`, e.message);
       lastError = e;
       
-      // If it's a quota/rate limit error (429) or service unavailable (503), continue to next tier
-      if (e.message.includes('429') || e.message.includes('Quota') || e.message.includes('503') || e.message.includes('402')) {
+      // If it's a quota error (429), forbidden (403), not found (404), or service error (503/402), continue to next tier
+      if (e.message.includes('429') || e.message.includes('Quota') || e.message.includes('403') || e.message.includes('404') || e.message.includes('503') || e.message.includes('402')) {
         console.log(`[AI Provider] Falling back to next tier...`);
         continue;
       }
@@ -193,7 +193,7 @@ export async function executeTextWithFallback(prompt: string) {
       console.warn(`[AI Provider TEXT] Error with ${tier.id}:`, e.message);
       lastError = e;
       
-      if (e.message.includes('429') || e.message.includes('Quota') || e.message.includes('503') || e.message.includes('402')) {
+      if (e.message.includes('429') || e.message.includes('Quota') || e.message.includes('403') || e.message.includes('404') || e.message.includes('503') || e.message.includes('402')) {
         console.log(`[AI Provider TEXT] Falling back to next tier...`);
         continue;
       }

@@ -57,13 +57,15 @@ BATCH SPLITS:
 If a cell has multiple subjects separated by / with group codes like (B1) (B2) or (A) (B) — create one entry per group.
 
 IMPORTANT:
-- Do NOT invent subjects not in the image
-- Do NOT add subjects from memory
-- Read ONLY what is visible in the image
-- If you cannot read a cell mark it as uncertain: true
+- IDENTIFY ALL CLASSES: Even if they are small or in a grid.
+- LOOK FOR TIMES: Look for patterns like "9:00 - 10:00", "09:00 AM", or "11 to 12".
+- LOOK FOR DAYS: Monday, Tue, Wed, etc. If a column represents a day, apply it to all rows in that column.
+- EXTRACT SUBJECT NAMES: Look for text that looks like a course code (e.g., CS101) or name.
+- Do NOT invent subjects not in the image.
+- If you see a grid, map the Row (Time) and Column (Day) to every non-empty cell.
+- Return ONLY a JSON array, nothing else. No markdown. No explanation. Just JSON.
 
-Return ONLY a JSON array, nothing else. No markdown. No explanation. Just JSON.
-
+Target JSON Format:
 [{"subject":"","type":"Theory","startTime":"9:00 AM","endTime":"10:00 AM","days":["Monday"],"room":"","faculty":"","batch":"All","uncertain":false}]`
     
     let classes = null
@@ -176,15 +178,18 @@ function parseGeminiJSON(text: string) {
       return null
     }
     
-    // Filter out invalid entries
+    // Filter out entries that have zero data
     return parsed.filter((cls: any) => 
-      cls.subject && cls.subject.trim().length > 0 &&
-      cls.startTime && cls.startTime.trim().length > 0
-    )
+      (cls.subject && cls.subject.trim().length > 0) || 
+      (cls.startTime && cls.startTime.trim().length > 0)
+    ).map(cls => ({
+      ...cls,
+      uncertain: cls.uncertain || !cls.startTime || !cls.endTime || !cls.subject
+    }))
     
   } catch (e: any) {
     console.error('JSON parse error:', e.message)
-    console.error('Failed text:', text.substring(0, 200))
+    console.error('Failed text start:', text.substring(0, 300))
     return null
   }
 }
